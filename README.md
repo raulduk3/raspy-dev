@@ -12,5 +12,7 @@ initialized to, and the tools that keep them in place.
 - `runbooks/`: procedures performed by hand, once or rarely.
 - `bin/new-repo`: initializes a repository from the templates and applies the rulesets.
 - `MODELS.md`: which class of model does which class of work.
+- `ROLES.md`: which surface holds which class of work, what each refuses, and where it hands off.
+- `vscode/`: the editor surface: user-level chat instructions and the terminal approval list.
 
 Repositories copy from this one. They never link to it.
