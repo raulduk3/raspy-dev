@@ -89,14 +89,22 @@ Scope (only these path prefixes may change): $scope
    you found and stop. Do not push.
 3. Otherwise: smallest coherent change with tests and affected spec lines; commits
    \`type(scope): summary\`; no names of people, tools, models or sessions in commits or code.
-4. Delete this file, run \`~/.bun/bin/bun run check\` on the final head, paste the result in the
+4. Delete this file (\`rm .worker-brief.md\`), run \`bun run check\` on the final head, paste the result in the
    pull request body.
 5. \`git push -u origin $branch\`, then open a DRAFT pull request with the repository template,
    body citing \`Closes #$i\`. Stop.
 Never push to develop or main, merge, mark ready, approve, deploy, restart, rebase or amend
 pushed commits, or touch another worktree.
 EOF
-    ( cd "$wt" && nohup claude --model "$model" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits > "$out/worker-$i.log" 2>&1 & echo $! > "$out/worker-$i.pid" )
+    # Headless workers get no interactive prompt and no repository-local allowlist (the worktree has
+    # no .claude/settings.local.json), so every Bash call they need is allowed here explicitly.
+    # The pre-tool-use guard hook still refuses pushes to protected branches, merges, ready, deploys.
+    ( cd "$wt" && nohup claude --model "$model" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+        --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
+          "Bash(git add *)" "Bash(git commit *)" "Bash(git push -u origin $branch)" \
+          "Bash(gh issue view *)" "Bash(gh issue comment $i *)" "Bash(gh pr create *)" "Bash(gh pr view *)" \
+          "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
+        < /dev/null > "$out/worker-$i.log" 2>&1 & echo $! > "$out/worker-$i.pid" )
     echo "#$i -> $branch ($model) pid $(cat "$out/worker-$i.pid")"
   done
 }
