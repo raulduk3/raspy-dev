@@ -45,12 +45,22 @@ jq -c '
 closed_set="$(jq -r '.[].number' "$tmp/closed.json" | tr '\n' ' ')"
 is_closed() { case " $closed_set " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
+# Issues already in review: an open pull request cites them (`Closes #N`) or its branch ends in
+# `-N`. They stay open and labeled until the merge closes them, so they are excluded here or the
+# cap would be spent on them every cycle.
+in_review_lines="$(jq -r '.[] | .number as $pr
+  | ( ((.body // "") | scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]),
+      ((.headRefName // "") | capture("-(?<n>[0-9]+)$")? | .n) )
+  | "\(.) \($pr)"' "$tmp/prs.json" 2>/dev/null)"
+in_review() { awk -v n="$1" '$1==n {print "pr#" $2; found=1; exit} END {exit !found}' <<<"$in_review_lines"; }
+
 # Candidates: sprint-ready with both lines present.
 selected=(); selected_scopes=(); skipped=()
 while IFS= read -r row; do
   n="$(jq -r .number <<<"$row")"
   labels="$(jq -r '.labels | join(",")' <<<"$row")"
   case ",$labels," in *",sprint-ready,"*) ;; *) continue ;; esac
+  if pr="$(in_review "$n")"; then skipped+=("#$n in review $pr"); continue; fi
   scope="$(jq -r '.scope // ""' <<<"$row")"
   deps="$(jq -r '.depends // ""' <<<"$row")"
   if [ -z "$scope" ] || [ -z "$deps" ]; then skipped+=("#$n missing Scope/Depends line"); continue; fi

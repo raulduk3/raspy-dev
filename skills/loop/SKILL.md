@@ -21,6 +21,10 @@ owner's word in that session; `bot` means the machine user's token from 1Passwor
 Every implementable issue body carries two plain lines: `Scope: <comma-separated path prefixes>`
 and `Depends on: #N, #M` or `Depends on: none`. Only issues labeled `sprint-ready` with both lines
 are selected. Scopes must be pairwise prefix-disjoint within one tick; dependencies must be closed.
+`Scope:` lists code and test prefixes. The documentation lines the repository requires in the same
+pull request (specification text, status markers, lock digests) are always in scope and are not
+checked for overlap; the owner resolves a rare shared-file conflict at merge. An issue that an open
+pull request already cites is in review and is not reselected until the merge closes it.
 
 ## Procedure
 
