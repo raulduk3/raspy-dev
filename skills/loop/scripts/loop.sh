@@ -86,7 +86,9 @@ Scope (only these path prefixes may change): $scope
 The documentation lines the repository's rules require in the same pull request are always in
 scope as well: the specification text a behavior change affects, its status marker that cites
 this issue, and any lock digest that guards it.
-1. Read the issue and the spec sections it cites; read the code and its tests before editing.
+1. Read the issue with its comments (\`gh issue view $i --repo $repo --comments\`): the owner refines
+   the request in comments, and a comment posted after the body wins. Read the spec sections the
+   issue cites; read the code and its tests before editing.
 2. If the fix needs code or test files outside the scope, write one comment on the issue with
    \`gh issue comment $i --repo $repo --body ...\` saying exactly what you found and stop. Do not push.
    If the code already matches the contract on this base and only the specification's status
@@ -95,8 +97,9 @@ this issue, and any lock digest that guards it.
    \`type(scope): summary\`; no names of people, tools, models or sessions in commits or code.
 4. Delete this file (\`rm .worker-brief.md\`), run \`bun run check\` on the final head, paste the result in the
    pull request body.
-5. \`git push -u origin $branch\`, then open a DRAFT pull request with the repository template,
-   body citing \`Closes #$i\`. Stop.
+5. \`git push -u origin $branch\`, then open a DRAFT pull request with the repository template:
+   \`gh pr create --base develop --draft ...\`, body citing \`Closes #$i\`. The base is always
+   \`develop\`, never the default branch. Stop.
 Never push to develop or main, merge, mark ready, approve, deploy, restart, rebase or amend
 pushed commits, or touch another worktree.
 EOF
@@ -112,7 +115,9 @@ EOF
         --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
           "Bash(git add *)" "Bash(git commit *)" "Bash(git push -u origin $branch)" \
           "Bash(gh issue view *)" "Bash(gh issue comment $i *)" "Bash(gh pr create *)" "Bash(gh pr view *)" \
-          "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" \
+          "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(bun install*)" \
+          "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
+          "Bash(/.bun/bin/bun run *)" "Bash(/.bun/bin/bun test *)" "Bash(/.bun/bin/bun install*)" \
           "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
         < /dev/null > "$out/worker-$i.log" 2>&1 & echo $! > "$out/worker-$i.pid" )
     echo "#$i -> $branch ($model) pid $(cat "$out/worker-$i.pid")"
