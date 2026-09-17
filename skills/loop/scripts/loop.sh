@@ -72,7 +72,7 @@ dispatch() {
     j="$(gh issue view "$i" --repo "$repo" --json title,body,labels)"
     title="$(jq -r .title <<<"$j")"; labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"
     scope="$(jq -r '(.body // "") | capture("(?m)^Scope: *(?<s>[^\n]+)")? .s // "unspecified"' <<<"$j")"
-    slug="$(tr '[:upper:]' '[:lower:]' <<<"$title" | sed -E 's/^[a-z]+-[a-z]+-? *//; s/[^a-z0-9]+/-/g; s/^-|-$//g' | cut -c1-36)"
+    slug="$(tr '[:upper:]' '[:lower:]' <<<"$title" | sed -E 's/^[a-z]+-[a-z]+[-:]? *//; s/[^a-z0-9]+/-/g; s/^-|-$//g' | cut -c1-36 | sed -E 's/-$//')"
     kind=fix; case ",$labels," in *",enhancement,"*|*",spec,"*) kind=feat ;; *",documentation,"*) kind=docs ;; esac
     branch="$kind/$slug-$i"; wt="$dir/.claude/worktrees/loop-$i-$slug"; model="$(tier_model "$labels")"
     if [ -e "$wt" ]; then echo "#$i: worktree exists, not relaunched"; continue; fi
@@ -83,10 +83,14 @@ Repository $repo. Branch \`$branch\` from origin/develop $base. This directory i
 Read AGENTS.md and CONTRIBUTING.md here first; the repository's rules win over this brief.
 Issue #$i: $title
 Scope (only these path prefixes may change): $scope
+The documentation lines the repository's rules require in the same pull request are always in
+scope as well: the specification text a behavior change affects, its status marker that cites
+this issue, and any lock digest that guards it.
 1. Read the issue and the spec sections it cites; read the code and its tests before editing.
-2. If the issue is already resolved on this base, or the fix needs files outside the scope, write
-   one comment on the issue with \`gh issue comment $i --repo $repo --body ...\` saying exactly what
-   you found and stop. Do not push.
+2. If the fix needs code or test files outside the scope, write one comment on the issue with
+   \`gh issue comment $i --repo $repo --body ...\` saying exactly what you found and stop. Do not push.
+   If the code already matches the contract on this base and only the specification's status
+   marker is stale, the change is that marker and its lock digest: make it and continue.
 3. Otherwise: smallest coherent change with tests and affected spec lines; commits
    \`type(scope): summary\`; no names of people, tools, models or sessions in commits or code.
 4. Delete this file (\`rm .worker-brief.md\`), run \`bun run check\` on the final head, paste the result in the
