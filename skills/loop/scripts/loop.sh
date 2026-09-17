@@ -117,7 +117,6 @@ EOF
           "Bash(gh issue view *)" "Bash(gh issue comment $i *)" "Bash(gh pr create *)" "Bash(gh pr view *)" \
           "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(bun install*)" \
           "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
-          "Bash(/.bun/bin/bun run *)" "Bash(/.bun/bin/bun test *)" "Bash(/.bun/bin/bun install*)" \
           "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
         < /dev/null > "$out/worker-$i.log" 2>&1 & echo $! > "$out/worker-$i.pid" )
     echo "#$i -> $branch ($model) pid $(cat "$out/worker-$i.pid")"
