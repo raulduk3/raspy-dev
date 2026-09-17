@@ -103,7 +103,12 @@ EOF
     # Headless workers get no interactive prompt and no repository-local allowlist (the worktree has
     # no .claude/settings.local.json), so every Bash call they need is allowed here explicitly.
     # The pre-tool-use guard hook still refuses pushes to protected branches, merges, ready, deploys.
-    ( cd "$wt" && nohup claude --model "$model" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+    # The worker starts from a clean environment: only HOME, PATH, USER, LANG and TERM pass through.
+    # A scheduler's process carries its own endpoint, proxy and credential variables, and a worker
+    # that inherits them can be refused once the scheduled run ends. The coding agent's own
+    # configuration decides its endpoint and credentials.
+    ( cd "$wt" && env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" LANG="${LANG:-en_US.UTF-8}" TERM=dumb \
+        nohup claude --model "$model" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
         --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
           "Bash(git add *)" "Bash(git commit *)" "Bash(git push -u origin $branch)" \
           "Bash(gh issue view *)" "Bash(gh issue comment $i *)" "Bash(gh pr create *)" "Bash(gh pr view *)" \
