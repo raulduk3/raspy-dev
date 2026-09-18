@@ -12,7 +12,6 @@ set -u
 BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] || { echo "brief: missing $BRIEF_CONF" >&2; exit 2; }
 . "$BRIEF_CONF"
-LOOP_TITLE="Development loop"
 NO_VPS=0
 [ "${1:-}" = "--no-vps" ] && NO_VPS=1
 
@@ -75,14 +74,18 @@ found=0; IFS=: ; for d in $INTAKE_DIRS; do
 done; unset IFS
 [ "$found" = 0 ] && echo "  none"
 
-# 6. Last loop cycle comment on the pinned loop issue, if the issue exists.
+# 6. The loop's local ledger: open day and steer, then the newest CYCLE report.
 echo "loop:"
-loop_num="$(gh issue list --repo "$CI_REPO" --state open --search "\"$LOOP_TITLE\" in:title" --json number,title 2>/dev/null \
-  | jq -r --arg t "$LOOP_TITLE" '.[] | select(.title == $t) | .number' | head -1)"
-if [ -z "$loop_num" ]; then
-  echo "  no loop issue yet (run loop.sh start)"
+ctl="${LOOP_STATE_DIR:-$HOME/.local/state/dev-platform/loop}/${CI_REPO//\//__}"
+if [ -f "$ctl/day-branch" ]; then
+  echo "  open day: $(head -1 "$ctl/day-branch"), steer: $(head -1 "$ctl/steer" 2>/dev/null || echo 'pause (no file)')"
 else
-  gh issue view "$loop_num" --repo "$CI_REPO" --json comments --jq '.comments[].body' 2>/dev/null \
-    | awk '/^CYCLE /{buf=""} {buf=buf "\n" $0} END{print buf}' | grep -E '^(CYCLE|plan|done|waiting|blocked|decisions|lessons|metrics)' | tail -8 | sed 's/^/  /'
-  [ $? -ne 0 ] && echo "  issue #$loop_num has no cycle comment yet"
+  echo "  no open day (loop.sh start); steer: $(head -1 "$ctl/steer" 2>/dev/null || echo 'pause (no file)')"
+fi
+last="$(ls -t "$ctl"/*/cycle.md 2>/dev/null | head -1)"
+if [ -n "$last" ]; then
+  # Everything but the blocks other brief sections already cover (merges, decisions).
+  awk '/^(merged today|decisions|lessons):/ {skip=1; next} /^[a-zA-Z]/ {skip=0} !skip' "$last" | sed 's/^/  /'
+else
+  echo "  no cycle report yet (loop.sh collect)"
 fi
