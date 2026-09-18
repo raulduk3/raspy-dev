@@ -49,6 +49,36 @@ keep that safe, and all four are mechanisms already installed:
 4. Thinking output leaves the chat window as text on the ledger. If it is worth keeping, it is
    an issue comment, a decision issue or a spec pull request.
 
+## Session titles
+
+Every agent session on an engineering repository (Claude Code in the terminal, the desktop app,
+Cowork, the editor extension) carries one title format so the session list reads like the
+ledger: sortable by area, searchable by pull request or issue number. The session names itself
+as soon as its scope is clear and renames itself if the scope changes.
+
+`kind(area): Description #ref`
+
+- `kind` is what the session does. Session-only kinds: `loop` (the daily loop runner), `review`
+  (pull request review), `spike` (investigation or design, nothing shipped), `forensics`
+  (read-only host or data diagnosis), `ops` (deploy, republish, key, webhook or host work).
+  Otherwise the commit type the work would ship as: `feat`, `fix`, `refactor`, `docs`, `test`,
+  `chore`.
+- `area` is the repository's commit scope for the code touched, lowercase kebab-case. `repo`,
+  `process`, `release` or `staging` when no code scope fits.
+- `Description` is sentence case, under about 60 characters, no trailing period, and not the
+  pull request title pasted in.
+- `#ref` is the pull request number, or the issue number when there is no pull request. Omitted
+  when neither exists; appended when the pull request opens.
+- No date prefix. Only `loop` sessions carry a date, at the end of the description, because
+  nothing else tells them apart: `loop(repo): Daily development loop 2026-09-18`.
+
+Examples: `fix(dialpad): Center queue callback lifecycle logging #458`,
+`forensics(staging): Calls immediately on hold`,
+`review(spec): Timeout-composition deviation for TDD-3.4.18 #497`.
+
+The title is session metadata on the owner's machine. It never enters a repository: commits,
+pull request bodies and specifications still name no session.
+
 ## Hand-off protocol
 
 When a request lands on the wrong surface, the surface names the owning surface in one line and
