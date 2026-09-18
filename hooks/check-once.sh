@@ -14,11 +14,11 @@ grep -q '"check"' "$root/package.json" || { echo "check-once: no check script in
 cd "$root"
 mark="$(git rev-parse --path-format=absolute --git-path dev-platform)"; mkdir -p "$mark"
 
-tree_hash() {  # HEAD plus every tracked change plus the content of untracked, unignored files
+tree_hash() {  # HEAD plus every tracked change plus the content of untracked, unignored files; .worker-* files are left out (written after the check, never committed)
   {
     git rev-parse HEAD 2>/dev/null
     git diff HEAD --binary 2>/dev/null
-    git ls-files --others --exclude-standard -z | xargs -0 shasum 2>/dev/null
+    git ls-files --others --exclude-standard -z -- . ":(exclude,glob)**/.worker-*" | xargs -0 shasum 2>/dev/null
   } | shasum | cut -d' ' -f1
 }
 

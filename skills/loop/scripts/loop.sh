@@ -135,12 +135,12 @@ section() {  # <file> <header text> -> the section body, without its header
   awk -v h="## $2" '$0==h {f=1; next} /^## / {f=0} f' "$1" | sed '/^Closes #[0-9]*$/d'
 }
 dispatch() {  # <issue>...
-  local dir base i j title labels scope slug kind branch wt model exclude f
+  local dir base i j title labels scope slug kind branch wt model exclude
   dir="$(repo_dir)"
   base="$(git -C "$dir" rev-parse --short=8 "$day")"
   # The worker's untracked files are excluded repository-wide (local only, never committed).
   exclude="$(git -C "$dir" rev-parse --path-format=absolute --git-path info/exclude)"; mkdir -p "$(dirname "$exclude")"
-  for f in .worker-brief.md .worker-pr.md .worker-blocked.md; do grep -qx "$f" "$exclude" 2>/dev/null || echo "$f" >> "$exclude"; done
+  grep -qxF '.worker-*' "$exclude" 2>/dev/null || echo '.worker-*' >> "$exclude"
   for i in "$@"; do
     j="$(gh issue view "$i" --repo "$repo" --json title,body,labels)"
     title="$(jq -r .title <<<"$j")"; labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"
