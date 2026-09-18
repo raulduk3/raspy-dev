@@ -14,8 +14,10 @@ URL, and the note folders scanned for new intake. The scripts read nothing else.
 ## Procedure
 
 1. `scripts/brief.sh` prints the brief. `--no-vps` skips the host probe.
-2. `scripts/morning.sh` prints the brief followed by today's loop plan (`loop/scripts/loop-sense.sh`)
-   and writes both under `LOOP_STATE_DIR/<date>/`.
+2. `scripts/morning.sh` prints the brief followed by today's loop plan (`loop/scripts/loop.sh plan`)
+   and writes the brief under `LOOP_STATE_DIR/<date>/` and the plan under the repository's ledger
+   directory, `LOOP_STATE_DIR/<owner__repo>/<date>/`. The `loop:` section reads that ledger: the
+   open day, the steer, the newest CYCLE report. Nothing is read from or written to an issue.
 3. Schedule `morning.sh` as a deterministic command on weekday mornings, delivered to the owner.
    It needs no model.
 

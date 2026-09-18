@@ -7,19 +7,31 @@ and skills, Codex rules, the OpenClaw agent workspace). The repository's `AGENTS
 the work. `MODELS.md` decides which class of model runs it.
 
 The one rule behind the table: **GitHub is the ledger and the owner is the only writer of
-record.** Issues are work, pull requests are the record of a change, tags are releases, the
-pinned loop issue is the daily state. Agents produce drafts, diffs, reports and read-only
-findings. The owner commits, merges, tags, deploys and posts.
+record.** Issues are work, pull requests are the record of a change, tags are releases. The
+loop's daily state is a directory on the owner's machine (`LOOP_STATE_DIR`, skill `loop`), and
+the day's one pull request is its record on the ledger; nothing about the loop is posted on
+issues. Agents produce drafts, diffs, reports and read-only findings. The owner commits, merges,
+tags, deploys and posts.
+
+Two OpenClaw agents share the machine and are connected but decoupled. The engineering agent
+(Iztac) holds the engineering rows below. The personal agent (Morty) holds personal
+coordination, the journal, time tracking and finances; it reads the engineering agent's session
+records, memory files and journal lines for billing and context, may message it and be
+messaged, and holds no authority over engineering work: no review, gate or approval passes
+through it. The owner is the only authority over either. Every tool on the machine (editor
+chat, Claude Code, Codex, Cowork, local models) is usable by the owner and by the engineering
+agent directly, under the same refusals; the platform's skills and hooks are shared tooling,
+not a tether.
 
 | Surface | Does | Refuses, and hands off to |
 | --- | --- | --- |
 | Owner | Decides, reviews locally, commits with trailers, pushes, opens and merges pull requests, tags, authorizes every deploy, posts on the ledger | |
 | Editor with chat (VS Code, Copilot, Claude Code and Codex extensions) | Surgical work with the owner present: read the diff, edit, run the checks, draft the commit message, review a checked-out pull request, dispose of review findings | Unattended multi-hour runs (headless coding agent). Anything on a host (operations session). Pushing to protected branches, merging, marking ready, approving (owner). Scheduling or memory (assistant) |
-| Coding agent, headless (Claude Code in the background, Codex exec, cloud coding agents) | One issue, one worktree, one branch, one draft pull request with the template body and the check output. Runs from a written brief with a scope and a stop condition | Choosing its own issue (the loop plans). Touching another worktree. Pushing to protected branches, merging, deploying. Anything the brief's scope excludes: it stops and says so on the issue |
+| Coding agent, headless (Claude Code in the background, Codex exec, cloud coding agents) | One issue, one worktree, one branch. Inside the loop: a local branch from the day branch, the check recorded once, a `.worker-pr.md` body with the template sections, then stop; the owner reviews and folds it. Outside the loop: one draft pull request with the template body and the check output. Runs from a written brief with a scope and a stop condition | Choosing its own issue (the loop plans). Touching another worktree. Pushing, opening a pull request or commenting from inside the loop. Pushing to protected branches, merging, deploying. Anything the brief's scope excludes: it stops and says so in `.worker-blocked.md` (loop) or on the issue |
 | Desktop agent session (Claude desktop, Cowork) | The owner's second editor surface, used freely: phased builds from a written prompt with a gate per phase; surgical work in a worktree when the owner prefers chat-first over editor-first; intake from meeting notes and transcripts dropped into the session, using the `intake` skill; pull request walkthroughs (`gh pr checkout`, explain the diff, reproduce review findings). Runs the same hooks and skills as the terminal, so the same commands are refused | Starting or steering the loop (the assistant owns the ledger and the gate). Merging, marking ready, tagging, deploying: the owner does those in the editor or terminal. Holding work that never becomes a pull request |
 | Implementation-tier agent (Codex, from the ChatGPT desktop app or the CLI) | A bounded change with a deterministic check behind it, in its own worktree, ending in a draft pull request; `codex review` on any pull request as evidence, never as approval; cloud tasks on the owner's own repositories. Runs under the Codex rules and the workspace-write sandbox | Judgment work: specification, decisions, review verdicts. Any change with no check that would catch a wrong answer. Starting or steering the loop |
-| Assistant (OpenClaw engineering agent) | The morning brief, the daily loop's sense, plan, collect and report steps, intake from meetings into decision drafts, read-only host diagnostics, durable memory, drafted text the owner posts | Editing repository code: it opens or names a worktree for the editor or a coding agent instead. Pushing, posting as itself on repositories it has no identity in, host mutations without an explicit go in that session, gateway configuration without the owner's go |
-| Personal assistant (OpenClaw) | Personal coordination, journal, time tracking, finances | Engineering, review, deploys |
+| Assistant (OpenClaw engineering agent, Iztac) | The morning brief; the loop's start, plan, go, pause, collect and close steps on the owner's word in that session; intake from meetings into decision drafts; read-only host diagnostics; durable memory; drafted text the owner posts. May drive any tool on the machine directly for these, under the same refusals | Editing repository code: it opens or names a worktree for the editor or a coding agent instead. Folding, pushing, opening the day pull request, finishing (the owner's terminal verbs). Scheduling worker launches itself (the tick automation is the owner's to enable). Posting as itself on repositories it has no identity in, host mutations without an explicit go in that session, gateway configuration without the owner's go |
+| Personal assistant (OpenClaw, Morty) | Personal coordination, journal custody, time tracking, finances. Reads the engineering agent's sessions, memory and journal lines for billing and context; exchanges messages with it | Engineering, review, gates, approvals, deploys. It holds no authority over engineering work and is never a step in the engineering path |
 | Chat for thinking (ChatGPT desktop, Claude web) | Used freely: research, framing options, second opinions on a specification section, drafting decision text, rehearsing a stakeholder conversation | Code and terminals. Output becomes an issue comment, a decision issue or a spec pull request, posted by the owner. State that stays only in the chat window is lost by design |
 | GitHub | The ledger. Automated review on personal repositories, checks on every pull request, the release lane, the deploy lane on tags | State anywhere else |
 
@@ -33,7 +45,7 @@ keep that safe, and all four are mechanisms already installed:
 2. The Claude Code hooks, the platform skills and the Codex rules load in the desktop apps the
    same as in the terminal. A refused command is refused everywhere.
 3. The loop has one coordinator, the assistant. The desktop apps take issues from it or from
-   the owner; they never plan the sprint or post the gate.
+   the owner; they never plan the sprint or write the steer.
 4. Thinking output leaves the chat window as text on the ledger. If it is worth keeping, it is
    an issue comment, a decision issue or a spec pull request.
 

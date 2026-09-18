@@ -3,22 +3,27 @@
 #
 # Read-only. Reads open issues, open pull requests and their checks. Parses the two plain lines
 # every implementable issue carries (`Scope: <path prefixes>` and `Depends on: #N, #M | none`),
-# builds the dependency graph, selects `sprint-ready` issues whose dependencies are closed and
-# whose scopes are pairwise prefix-disjoint, up to the caps, and prints the plan comment in the
-# fixed format plus the exact `gh` command the owner runs to post it (nothing here posts).
-# The gate is hard: dispatch waits for a `steer: go` comment on the loop issue.
+# builds the dependency graph, selects `sprint-ready` issues whose dependencies are closed (or
+# already folded into the open day branch) and whose scopes are pairwise prefix-disjoint, up to
+# the cap, and prints the plan in the fixed format. Nothing here posts anywhere; the plan is
+# written to --out. The gate is the steer file that loop.sh keeps: `go` dispatches, anything
+# else, including no file at all, is pause.
 #
-# Usage: loop-sense.sh [--repo owner/name] [--local-cap 3] [--out plan.md]
+# Usage: loop-sense.sh --repo owner/name [--local-cap 3] [--exclude-file f] [--out plan.md]
+#   --exclude-file: lines of `<issue> <reason>` from the local ledger (folded issues waiting for
+#   the day pull request, issues with a local worker branch). A reason starting with `folded`
+#   also satisfies a dependency, because that code is already on the day branch.
 set -u
 REPO=""
 LOCAL_CAP=3
 OUT=""
-LOOP_TITLE="Development loop"
+EXCLUDE_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
     --local-cap) LOCAL_CAP="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
+    --exclude-file) EXCLUDE_FILE="$2"; shift 2 ;;
     *) echo "unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -45,14 +50,20 @@ jq -c '
 closed_set="$(jq -r '.[].number' "$tmp/closed.json" | tr '\n' ' ')"
 is_closed() { case " $closed_set " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-# Issues already in review: an open pull request cites them (`Closes #N`) or its branch ends in
-# `-N`. They stay open and labeled until the merge closes them, so they are excluded here or the
-# cap would be spent on them every cycle.
+# Issues already in review on GitHub: an open pull request cites them (`Closes #N`) or its
+# branch ends in `-N`. The day pull request cites every folded issue once it is open.
 in_review_lines="$(jq -r '.[] | .number as $pr
   | ( ((.body // "") | scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]),
       ((.headRefName // "") | capture("-(?<n>[0-9]+)$")? | .n) )
   | "\(.) \($pr)"' "$tmp/prs.json" 2>/dev/null)"
 in_review() { awk -v n="$1" '$1==n {print "pr#" $2; found=1; exit} END {exit !found}' <<<"$in_review_lines"; }
+
+# Issues the local ledger excludes: folded into the day branch, or holding a worker branch.
+excluded() {  # <issue> -> prints the reason, exit 1 when not excluded
+  [ -n "$EXCLUDE_FILE" ] && [ -f "$EXCLUDE_FILE" ] || return 1
+  awk -v n="$1" '$1==n {sub(/^[0-9]+ /,""); print; found=1; exit} END {exit !found}' "$EXCLUDE_FILE"
+}
+is_folded() { local r; r="$(excluded "$1")" && case "$r" in folded*) return 0 ;; esac; return 1; }
 
 # Candidates: sprint-ready with both lines present.
 selected=(); selected_scopes=(); skipped=()
@@ -61,13 +72,14 @@ while IFS= read -r row; do
   labels="$(jq -r '.labels | join(",")' <<<"$row")"
   case ",$labels," in *",sprint-ready,"*) ;; *) continue ;; esac
   if pr="$(in_review "$n")"; then skipped+=("#$n in review $pr"); continue; fi
+  if why="$(excluded "$n")"; then skipped+=("#$n $why"); continue; fi
   scope="$(jq -r '.scope // ""' <<<"$row")"
   deps="$(jq -r '.depends // ""' <<<"$row")"
   if [ -z "$scope" ] || [ -z "$deps" ]; then skipped+=("#$n missing Scope/Depends line"); continue; fi
-  # Dependencies satisfied: every #N closed, or the literal `none`.
+  # Dependencies satisfied: every #N closed or folded, or the literal `none`.
   unmet=""
   if [ "$deps" != "none" ]; then
-    for d in $(grep -oE '#[0-9]+' <<<"$deps" | tr -d '#'); do is_closed "$d" || unmet="$unmet #$d"; done
+    for d in $(grep -oE '#[0-9]+' <<<"$deps" | tr -d '#'); do is_closed "$d" || is_folded "$d" || unmet="$unmet #$d"; done
   fi
   if [ -n "$unmet" ]; then skipped+=("#$n waits on$unmet"); continue; fi
   # Scope disjointness against already selected issues (pairwise prefix check).
@@ -85,7 +97,7 @@ while IFS= read -r row; do
   for p in $(tr ',' ' ' <<<"$scope"); do selected_scopes+=("$p"); done
 done < "$tmp/parsed.jsonl"
 
-# Open PRs and their check state (the owner's review queue).
+# Open pull requests and their check state (the owner's review queue on GitHub).
 pr_lines="$(jq -r '
   def checks:
     (.statusCheckRollup // []) as $c
@@ -116,20 +128,11 @@ if [ "${#skipped[@]}" -eq 0 ]; then plan="$plan
   none"; else for s in "${skipped[@]}"; do plan="$plan
   $s"; done; fi
 plan="$plan
-review queue (owner):
-$(sed 's/^/  /' <<<"$pr_lines")
+review queue (owner, on GitHub):
+$( [ -n "$pr_lines" ] && sed 's/^/  /' <<<"$pr_lines" || echo '  none')
 caps: local $LOCAL_CAP workers, one ops session, stop on quota error
-gate: hard. Reply \`steer: go\` on this issue to dispatch; \`steer: skip <n>\`, \`only <n>\`, \`pause\` also honored."
+gate: the steer file. \`loop.sh go\` writes go and dispatches; \`loop.sh pause\` or no file is pause."
 
 printf '%s\n' "$plan"
 [ -n "$OUT" ] && printf '%s\n' "$plan" > "$OUT"
-
-loop_num="$(gh issue list --repo "$REPO" --state open --search "\"$LOOP_TITLE\" in:title" --json number,title 2>/dev/null \
-  | jq -r --arg t "$LOOP_TITLE" '.[] | select(.title == $t) | .number' | head -1)"
-echo
-if [ -z "$loop_num" ]; then
-  echo "post: no '$LOOP_TITLE' issue exists yet; run loop.sh start."
-else
-  echo "post (owner runs; nothing here posts):"
-  echo "  gh issue comment $loop_num --repo $REPO --body-file ${OUT:-plan.md}"
-fi
+exit 0
