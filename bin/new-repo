@@ -4,17 +4,18 @@
 #   bin/new-repo <directory> [--owner <github-login>] [--github <owner>/<name>] [--private|--public]
 #
 # Copies templates/ into the directory, writes the minimal project files the templates assume
-# (package.json with the check scripts, tsconfig, prettier and eslint configuration, .gitignore, a
-# README stub), commits on main, tags v0.1.0 so the version derives, creates develop, and, when
-# --github names a repository, creates it with gh, pushes both branches and applies the rulesets
-# under github/rulesets/. Without --github nothing leaves the machine. Exit 0 on success.
+# (package.json with the check scripts, tsconfig, prettier and eslint configuration,
+# .prettierignore, .gitignore, a README stub), commits on main, tags v0.1.0 so the version
+# derives, creates develop, and, when --github names a repository, creates it with gh, pushes both
+# branches and applies the rulesets under github/rulesets/. Without --github nothing leaves the
+# machine. Exit 0 on success.
 set -euo pipefail
 
 PLATFORM="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATES="$PLATFORM/templates"
 RULESETS="$PLATFORM/github/rulesets"
 
-usage() { sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 directory=""
 owner=""
@@ -97,6 +98,9 @@ JSON
 cat > "$directory/.prettierrc.json" <<'JSON'
 { "printWidth": 100, "semi": true, "singleQuote": false, "trailingComma": "all", "endOfLine": "lf" }
 JSON
+# Hand-edited HTML must not fail format:check. Add to a .prettierignore the templates carry.
+touch "$directory/.prettierignore"
+grep -qxF "docs/incoming.html" "$directory/.prettierignore" || echo "docs/incoming.html" >> "$directory/.prettierignore"
 cat > "$directory/eslint.config.js" <<'JS'
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
