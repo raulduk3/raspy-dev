@@ -16,7 +16,8 @@ Turn a raw record (meeting transcript, message, email, notes, stored in the owne
    with a kind: `bug`, `amendment`, `feature` or `question`.
 3. **Read the repository.** Read `docs/spec/SDD.md`, `docs/spec/TDD.md`, the other documents under
    `docs/`, and the code the TDD `code:` comments name. When those files are absent or empty, say
-   so in the report and rank every candidate `brand new`.
+   so in the report. Every candidate is `brand new` except one that cannot be acted on at all,
+   which is still `nonsense`.
 4. **Rank** each candidate on two axes.
    - Congruency: `already satisfied`, `clarifies`, `amends`, `contradicts`, `brand new` or
      `nonsense`. Cite the specification item ids it touches (`SDD-XX-nn`, `TDD-x.y.z`); a
@@ -25,13 +26,13 @@ Turn a raw record (meeting transcript, message, email, notes, stored in the owne
      likely in scope, external provider effects and data migrations. One line of rationale that
      names what drove the size.
 5. **Append** the candidates to `docs/incoming.html` as one dated batch, creating the file from
-   `skills/distill/incoming.template.html` when it is absent. Copy the example batch in the
-   template, place the new batch directly under the `batches below, newest first` marker, and
-   never rewrite, reorder or delete an existing block: people edit them by hand. Escape `&`, `<`
-   and `>` in every statement and rationale. Candidate ids are `C-YYYY-MM-DD-n`; n starts at 1 and
-   continues within the day across batches, so search the file for the day's highest n first. Set
-   the `class` of each block to the congruency class: `satisfied`, `clarifies`, `amends`,
-   `contradicts`, `new` or `nonsense`.
+   the `incoming.template.html` that sits beside this skill file when it is absent. Copy the
+   example batch in the template, place the new batch directly under the
+   `batches below, newest first` marker, and never rewrite, reorder or delete an existing block:
+   people edit them by hand. Escape `&`, `<` and `>` in every statement and rationale. Candidate
+   ids are `C-YYYY-MM-DD-n`; n starts at 1 and continues within the day across batches, so search
+   the file for the day's highest n first. Set the `class` of each block to the congruency class:
+   `satisfied`, `clarifies`, `amends`, `contradicts`, `new` or `nonsense`.
 6. **Stop.** Report the batch as a short table: id, statement, kind, congruency, complexity. Do not
    file issues, edit the specification or open anything. Promotion is a person pasting a block
    into `intake`.
