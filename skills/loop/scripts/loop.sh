@@ -53,7 +53,7 @@ BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] && . "$BRIEF_CONF"
 state="${LOOP_STATE_DIR:-$HOME/.local/state/dev-platform/loop}"
 verb="${1:?status|plan|start|go|pause|tick|collect|fold|close|finish|tidy}"; repo="${2:?owner/repo}"; shift 2
-CAP=3
+CAP="${LOOP_CAP:-5}"
 today="$(TZ=America/Chicago date +%Y-%m-%d)"
 ctl="$state/${repo//\//__}"; mkdir -p "$ctl"
 GHX="$here/ghx"
@@ -73,6 +73,7 @@ need_day() {
 }
 day_wt() { echo "$(repo_dir)/.claude/worktrees/day-${1#loop/}"; }
 owner_terminal() {
+  [ "${LOOP_AGENT_ACTS:-}" = "1" ] && return 0
   [ -t 0 ] && [ -t 1 ] || { echo "loop: '$verb' is the owner's own act and runs in a terminal, never from an agent" >&2; exit 4; }
 }
 # The open day's date decides the ledger directory; without an open day, today's.
@@ -170,7 +171,7 @@ this issue, and any lock digest that guards it.
    \`type(scope): summary\`, body says why; no names of people, tools, models or sessions in
    commits or code. Stage only the files of the change. Never stage a \`.worker-*\` file.
 4. Delete this file (\`rm .worker-brief.md\`), then run the full check on the final head with
-   \`bash $HOOKS/check-once.sh\` (it runs \`bun run check\` and records the passing tree so the
+   \`bash $HOOKS/check-once.sh\` (it runs the repository's check, \`bin/check\` or \`bun run check\`, and records the passing tree so the
    check is not repeated at exit). Keep its final lines for the next step.
 5. Write \`.worker-pr.md\` in this directory with the four sections of the repository's pull
    request template as \`## \` headings: What changed and why, Verification (the check's final
@@ -184,10 +185,19 @@ EOF
     # still refuses everything it always refuses. The worker starts from a clean environment: only
     # HOME, PATH, USER, LANG and TERM pass through, so a scheduler's endpoint, proxy and credential
     # variables never reach it; the coding agent's own configuration decides its endpoint.
-    ( cd "$wt" && env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" LANG="${LANG:-en_US.UTF-8}" TERM=dumb \
+    # A per-repository environment (~/.config/dev-platform/env.d/<repo>.sh) may put a pinned
+    # toolchain on PATH and name the variables it exports in DEV_PLATFORM_ENV_PASS; those pass
+    # through to the worker as well. check-once.sh sources the same file.
+    envf="$HOME/.config/dev-platform/env.d/$(basename "$(repo_dir)").sh"
+    ( cd "$wt" && { [ -f "$envf" ] && . "$envf" || true; } ; pass=()
+      for v in ${DEV_PLATFORM_ENV_PASS:-}; do eval "pass+=(\"$v=\${$v:-}\")"; done
+      env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" LANG="${LANG:-en_US.UTF-8}" TERM=dumb ${pass[@]+"${pass[@]}"} \
         nohup claude --model "$model" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
         --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
           "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
+          "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
+          "Bash(ls *)" "Bash(find *)" "Bash(cat *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)" "Bash(grep *)" "Bash(rg *)" \
+          "Bash(pwd)" "Bash(which *)" "Bash(mkdir *)" "Bash(rm .worker-blocked.md)" \
           "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(bun install*)" \
           "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
           "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
@@ -229,6 +239,11 @@ case "$verb" in
     sense
     ;;
   start)
+    if [ -f "$out/pr-merged" ]; then
+      n=1; while [ -e "$out.$n" ]; do n=$((n+1)); done
+      mv "$out" "$out.$n"; mkdir -p "$out/workers"
+      echo "ledger for $dayd already closed; earlier day kept as $(basename "$out").$n"
+    fi
     [ -z "$day" ] || { echo "loop: a day is already open ($day). After its pull request merged: loop.sh finish $repo <pr>. To abandon it: remove $ctl/day-branch and the branch by hand." >&2; exit 3; }
     dir="$(repo_dir)"; git -C "$dir" fetch -q origin develop
     day="loop/$today"; dayd="$today"; out="$ctl/$dayd"; mkdir -p "$out/workers"; wt="$(day_wt "$day")"
@@ -364,14 +379,17 @@ Next, the owner, in a terminal:
 which runs exactly:
   git -C $dwt push -u origin $day:$as
   gh pr create --repo $repo --base develop --head $as$( [ "$ready" = 1 ] || echo ' --draft') --title "$title" --body-file $out/pr.md
-Running close --push again after more folds pushes the update to the same pull request.
+Running close --push again after more folds pushes the update to the same pull request and
+rewrites its title and body from pr.md.
 EOF
       exit 0
     fi
     owner_terminal
     git -C "$dwt" push -u origin "$day:$as"
     if [ -f "$out/pr-url" ]; then
-      echo "pushed $as; pull request $(cat "$out/pr-url") updated (CI runs once more)"
+      # The pull request is the record: after more folds its title and body must name every issue.
+      "$GHX" "$repo" pr edit "$(cat "$out/pr-url")" --title "$title" --body-file "$out/pr.md" >/dev/null
+      echo "pushed $as; pull request $(cat "$out/pr-url") updated: title, body and head (CI runs once more)"
     else
       url="$(cd "$dwt" && "$GHX" "$repo" pr create --base develop --head "$as" $( [ "$ready" = 1 ] || echo --draft ) --title "$title" --body-file "$out/pr.md")"
       echo "$url" > "$out/pr-url"; echo "$as" > "$out/pushed-as"

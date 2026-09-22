@@ -66,7 +66,8 @@ and `tidy --apply` in a terminal (they refuse without one); the tick automation 
    day head (fails closed), write `pr.md` from the folded bodies with one `Closes #N` per issue,
    print the exact push and create commands. `--push` pushes the day branch as `type/slug`
    (default `fix/<date>`) and opens the one draft pull request to `develop` (`--ready` opens it
-   ready). After more folds, `close --push` again pushes the update to the same pull request.
+   ready). After more folds, `close --push` again pushes the update to the same pull request and rewrites its
+   title and body from `pr.md`.
 8. The owner reviews and merges it on GitHub, one CI run and one Testing deploy.
    `scripts/loop.sh finish <owner/repo> <pr>` then closes each folded issue with `Merged in #pr.`
    (closing keywords never fire on a non-default branch), deletes the pushed branch, removes the
