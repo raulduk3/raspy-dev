@@ -8,7 +8,9 @@ initialized to, and the tools that keep them in place.
   the hygiene check, the version script, the decision record template, the empty specification
   skeleton and amendment ledger).
 - `github/rulesets/`: branch rulesets applied to every repository, as JSON for the GitHub API.
-- `hooks/`: editor and agent guardrails installed on the local machine.
+- `hooks/`: editor and agent guardrails installed on the local machine. The machine's
+  `~/.config/dev-platform/personal.conf` lists the owner's own repositories; every other
+  repository is professional, and the guard treats the two differently.
 - `skills/`: reusable procedures for the tools that work in these repositories.
 - `runbooks/`: procedures performed by hand, once or rarely.
 - `bin/new-repo`: initializes a repository from the templates and applies the rulesets.

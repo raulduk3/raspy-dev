@@ -5,7 +5,7 @@ Which class of model does which class of work. Every fleet or workflow run carri
 | Tier | Work | Models |
 | --- | --- | --- |
 | Judgment | Specification, decisions, review, the root loop | Fable or Opus, low to medium effort |
-| Implementation | A bounded issue with a deterministic check behind it | Sonnet, Codex default |
+| Implementation | A bounded issue with a deterministic check behind it | `LOOP_WORKER_MODEL` (Sonnet by default), Codex default |
 | Mechanical | Triage, formatting, summaries | Haiku, local |
 
 Rules:
@@ -14,6 +14,8 @@ Rules:
 2. Escalate one tier on failure without asking. A second failure at the judgment tier stops and reports.
 3. Every dispatched run states its ceiling: tokens per worker, agents per cycle, wall-clock per cycle. A run with no ceiling is not dispatched.
 4. On a quota error, stop the lane, name the account, and do not retry on another account until the routing table below says so.
+
+Implementation tier: the loop's default worker model is `LOOP_WORKER_MODEL`, set in `brief.conf` (Sonnet when unset). On a subscription with full availability of the judgment model, set it to `fable` at high effort and keep Sonnet and Codex as explicit choices. Fable at high effort on a simple task does not spend much more than at low, so tiering is a cost lever, not a quality one. The rules above still hold.
 
 Routing table (fallback order on a quota error; edit here, never improvise):
 

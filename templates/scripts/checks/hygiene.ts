@@ -10,7 +10,9 @@
  *   identifier (commit messages only) or a person's name from `PEOPLE`. Trailer lines are exempt
  *   because they legitimately name a co-author. Files whose vocabulary legitimately contains a
  *   token are listed in `EXEMPTIONS`, each with its reason; changing that list is a pull request;
- * - `trailer-address`: a `Co-authored-by` trailer whose address is not a noreply address.
+ * - `trailer-attribution`: a `Co-authored-by` trailer whose name or address names a tool or model
+ *   (`ATTRIBUTION`), or a commit body line that says it was generated with something. Every
+ *   commit is the author's own.
  *
  * Merge commits are exempt: their messages are generated from branch names. The base reference
  * comes from `--base REF`, then `HYGIENE_BASE_REF`, then the merge base with `origin/develop`,
@@ -20,7 +22,7 @@
  */
 import path from "node:path";
 
-export type HygieneFindingCode = "subject-format" | "forbidden-token" | "trailer-address";
+export type HygieneFindingCode = "subject-format" | "forbidden-token" | "trailer-attribution";
 
 export interface HygieneFinding {
   readonly code: HygieneFindingCode;
@@ -103,7 +105,10 @@ export const EXEMPTIONS: readonly Exemption[] = [
 
 const TRAILER_LINE =
   /^(co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by|closes|fixes|refs?):/i;
-const CO_AUTHOR_TRAILER = /^co-authored-by:\s*[^<]*<([^>]*)>/i;
+const CO_AUTHOR_TRAILER = /^co-authored-by:\s*(.*)$/i;
+/** A co-author name or address that names a tool or model. */
+export const ATTRIBUTION = /anthropic|openai|claude|codex|copilot|noreply@/i;
+const GENERATED_WITH = /generated with/i;
 
 function exempt(file: string, token: string): boolean {
   return EXEMPTIONS.some(
@@ -172,14 +177,22 @@ export function checkCommitMessage(sha: string, message: string): HygieneFinding
   for (const [index, line] of lines.entries()) {
     const trailerMatch = CO_AUTHOR_TRAILER.exec(line);
     if (trailerMatch !== null) {
-      const address = trailerMatch[1] ?? "";
-      if (!/noreply/i.test(address)) {
+      const coAuthor = (trailerMatch[1] ?? "").trim();
+      if (ATTRIBUTION.test(coAuthor)) {
         findings.push({
-          code: "trailer-address",
+          code: "trailer-attribution",
           where,
-          message: `Co-authored-by address "${address}" is not a noreply address`,
+          message: `Co-authored-by "${coAuthor}" names a tool or model; the commit is the author's own`,
         });
       }
+      continue;
+    }
+    if (GENERATED_WITH.test(line)) {
+      findings.push({
+        code: "trailer-attribution",
+        where,
+        message: `${index === 0 ? "subject" : `body line ${index}`} says it was generated with a tool; the commit is the author's own`,
+      });
       continue;
     }
     if (TRAILER_LINE.test(line)) continue;

@@ -22,11 +22,15 @@ repository).
 - When reviewing a checked-out pull request, treat automated review findings as evidence to
   reproduce and disposition in the pull request, never as approval.
 - Stage only the files that belong to the change. Preserve unrelated uncommitted work.
+- Propose the session title on one line in the first reply,
+  `Title: kind(area): Description #ref`.
+- In a professional repository, add no attribution trailer or generated-with line to any commit,
+  pull request or issue.
 
 ## Never
 
-- Push to `develop` or `main`. Merge. Mark a pull request ready. Approve. Force-push, rebase,
-  reset or amend anything already pushed for review. The owner does these in the terminal.
+- Push to `develop` or `main`, merge, mark ready, approve, rewrite pushed history: the guard
+  hook refuses these; the owner does them.
 - Deploy, restart, stop or reconfigure a container or service. Open an ssh session as root.
   Rotate a credential. Bind a phone number. Publish an agent.
 - Run for hours unattended. Work that needs more than one session is a written brief for a

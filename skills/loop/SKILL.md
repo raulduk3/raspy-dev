@@ -20,9 +20,12 @@ open day (`loop/<date>`); its worktree is `.claude/worktrees/day-<date>` in the 
 
 `~/.config/dev-platform/repos.conf`: one line per repository, `owner/repo <tab> checkout path
 <tab> owner|bot`. `owner` means the two GitHub writes the loop makes (`pr create` at close,
-`issue close` at finish) use the human's own `gh` login and happen only in the owner's terminal;
-`bot` means the machine user's token from 1Password. `~/.config/dev-platform/brief.conf` sets
-`LOOP_STATE_DIR` (default `~/.local/state/dev-platform/loop`).
+`issue close` at finish) use the human's own `gh` login and happen in the owner's terminal, or
+from the assistant for `close --push` in a personal repository; `bot` means the machine user's token from 1Password. `~/.config/dev-platform/brief.conf` sets
+`LOOP_STATE_DIR` (default `~/.local/state/dev-platform/loop`), `LOOP_CAP` (running workers,
+default 5) and `LOOP_WORKER_MODEL` (the implementation-tier worker model, default `sonnet`); the
+environment overrides the last two. `~/.config/dev-platform/personal.conf` lists the owner's own
+repositories, as the guard hook reads it; every other repository is professional.
 
 ## Issue conventions
 
@@ -36,25 +39,28 @@ pull request cites, that is folded, or that holds a local worker branch is not r
 
 ## Procedure
 
-Who runs what: the assistant runs `start`, `plan`, `go`, `pause`, `collect` and `close` (without
-`--push`) on the owner's word in that session; the owner runs `fold`, `close --push`, `finish`
-and `tidy --apply` in a terminal (they refuse without one); the tick automation runs `tick`.
+Who runs what: the assistant runs `start`, `plan`, `go`, `pause`, `collect` and `close` on the
+owner's word in that session, and in a personal repository also `close --push` without
+`--ready`; the owner runs `fold`, `close --push`, `close --ready`, `finish` and `tidy --apply`
+in a terminal (they refuse without one); the tick automation runs `tick`.
 
 1. `scripts/loop.sh status <owner/repo>`: steer, open day, running workers, worker branches and
    their state, folded issues, the day pull request.
 2. `scripts/loop.sh start <owner/repo>`: fetch, cut `loop/<date>` from `origin/develop` into the
    day worktree, record it, write the PLAN. Refuses while a day is open.
 3. `scripts/loop.sh go <owner/repo> [only N ...|skip N ...]`: write `steer: go`, plan, dispatch a
-   worker per selected issue not yet dispatched, up to 3 running. Model per issue by tier:
-   `spec`, `decision`, `privacy`, `security` labels use the judgment tier; `documentation` the
-   mechanical tier; everything else the implementation tier. `scripts/loop.sh tick` does the same
-   from a schedule and prints `NO_REPLY` unless steer says go and a day is open;
-   `scripts/loop.sh pause` stops it.
+   worker per selected issue not yet dispatched, up to `LOOP_CAP` running. Model per issue by
+   tier: `spec`, `decision`, `privacy`, `security` labels use the judgment tier; `documentation`
+   the mechanical tier; everything else `LOOP_WORKER_MODEL`. In a personal repository the worker
+   runs with permissions bypassed under the guard hook alone; in a professional one it runs with
+   an explicit allow list. `scripts/loop.sh tick` does the same from a schedule and prints
+   `NO_REPLY` unless steer says go and a day is open; `scripts/loop.sh pause` stops it.
 4. A worker: one issue, one worktree, one `type/slug-N` branch from the day branch. It commits,
    runs `hooks/check-once.sh` (which records the passing tree), writes `.worker-pr.md` with the
    four template sections and `Closes #N`, and stops. It never pushes, opens a pull request or
-   comments. A worker that finds the fix outside its scope, or the issue already resolved, writes
-   `.worker-blocked.md` and stops; the owner widens the scope or closes the issue.
+   comments, and its commits carry no attribution trailer or generated-with line. A worker that
+   finds the fix outside its scope, or the issue already resolved, writes `.worker-blocked.md`
+   and stops; the owner widens the scope or closes the issue.
 5. `scripts/loop.sh collect <owner/repo>`: the CYCLE report from the ledger and the worktrees,
    with its one metrics line.
 6. `scripts/loop.sh fold <owner/repo> N ...`: the owner, after reading the worker's diff
@@ -64,10 +70,12 @@ and `tidy --apply` in a terminal (they refuse without one); the tick automation 
    `.worker-*` file, and a conflict (aborted; resolve by hand in the day worktree, then rerun).
 7. `scripts/loop.sh close <owner/repo> [--as type/slug] [--title ...]`: run the check once on the
    day head (fails closed), write `pr.md` from the folded bodies with one `Closes #N` per issue,
-   print the exact push and create commands. `--push` pushes the day branch as `type/slug`
-   (default `fix/<date>`) and opens the one draft pull request to `develop` (`--ready` opens it
-   ready). After more folds, `close --push` again pushes the update to the same pull request and rewrites its
-   title and body from `pr.md`.
+   print the exact push and create commands. In a professional repository the ghost check runs
+   first: a folded body or `pr.md` that carries a tool-named `Co-authored-by` line or a
+   generated-with line fails close with the file and line; the summary prints the result.
+   `--push` pushes the day branch as `type/slug` (default `fix/<date>`) and opens the one draft
+   pull request to `develop` (`--ready` opens it ready). After more folds, `close --push` again
+   pushes the update to the same pull request and rewrites its title and body from `pr.md`.
 8. The owner reviews and merges it on GitHub, one CI run and one Testing deploy.
    `scripts/loop.sh finish <owner/repo> <pr>` then closes each folded issue with `Merged in #pr.`
    (closing keywords never fire on a non-default branch), deletes the pushed branch, removes the

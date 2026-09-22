@@ -14,10 +14,17 @@
 # DEV_PLATFORM_ALLOW_MUTATIONS=1 in the agent's environment to lift the ssh and docker rules for a
 # session the owner is driving.
 #
-# A repository whose own policy lets its author merge is listed, one absolute path per line, in
-# ~/.config/dev-platform/merge-allowed.conf. Inside such a repository the develop rules lift: push
-# to develop, merge into develop and gh pr merge are allowed. Everything about main, force pushes
-# and history rewrites still applies everywhere, and so do the docker and ssh rules.
+# The owner's own repositories are listed, one absolute path per line (`#` comments, `~` expands),
+# in ~/.config/dev-platform/personal.conf. Inside a personal repository the develop rules lift:
+# push to develop, merge into develop and gh pr merge are allowed. Everything about main, force
+# pushes and history rewrites still applies everywhere, and so do the docker and ssh rules.
+#
+# Every repository not listed is professional, and there nothing that reaches the ledger names a
+# tool or a model. Refused in a professional repository: a git commit whose text carries a
+# Co-authored-by trailer naming a tool or model (anthropic, openai, claude, codex, copilot or a
+# noreply@ address) or a "generated with" line; gh pr create/edit/comment and gh issue
+# create/comment/edit whose text carries the same; a git push of a claude/, codex/ or copilot/
+# branch. A --body-file or commit -F cannot be inspected here; the loop's close guards that path.
 set -euo pipefail
 
 input="$(cat)"
@@ -25,18 +32,18 @@ command="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.s
 [ -n "$command" ] || exit 0
 cwd="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cwd",""))' 2>/dev/null || true)"
 
-# Repositories whose own policy lets the author merge to develop.
-allow_merge=0
-allowlist="$HOME/.config/dev-platform/merge-allowed.conf"
-if [ -n "$cwd" ] && [ -f "$allowlist" ]; then
+# The owner's own repositories; every other repository is professional.
+personal=0
+personal_conf="$HOME/.config/dev-platform/personal.conf"
+if [ -n "$cwd" ] && [ -f "$personal_conf" ]; then
   repo_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   repo_root="${repo_root%/.git}"
   while IFS= read -r line; do
     case "$line" in ''|'#'*) continue ;; esac
     entry="${line/#\~/$HOME}"
-    case "$repo_root/" in "$entry"/*) allow_merge=1 ;; esac
-    case "$cwd/" in "$entry"/*) allow_merge=1 ;; esac
-  done < "$allowlist"
+    case "$repo_root/" in "$entry"/*) personal=1 ;; esac
+    case "$cwd/" in "$entry"/*) personal=1 ;; esac
+  done < "$personal_conf"
 fi
 
 refuse() {
@@ -52,15 +59,30 @@ if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +push\b'; then
   if printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(\bmain\b|:refs/heads/main\b|:main\b)'; then
     refuse "git push to main is refused; main carries releases and is the owner's"
   fi
-  if [ "$allow_merge" != "1" ] && printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(\bdevelop\b|:refs/heads/develop\b|:develop\b)'; then
+  if [ "$personal" != "1" ] && printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(\bdevelop\b|:refs/heads/develop\b|:develop\b)'; then
     refuse "git push to develop is refused; open a pull request from a type/short-description branch"
   fi
   if printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(--force|-f\b|--force-with-lease|\+[a-zA-Z0-9_./-]+:)'; then
     refuse "force push is refused; nothing pushed for review is rewritten"
   fi
-  if [ "$allow_merge" != "1" ] && ! printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(-u |--set-upstream|origin +[a-zA-Z]+/|origin +HEAD|origin +refs/heads/[a-z]+/|refs/heads/[a-z]+/)'; then
+  if [ "$personal" != "1" ] && ! printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(-u |--set-upstream|origin +[a-zA-Z]+/|origin +HEAD|origin +refs/heads/[a-z]+/|refs/heads/[a-z]+/)'; then
     # A bare `git push` follows the branch's upstream, which may be develop or main.
     refuse "bare git push is refused; name the branch: git push -u origin <type/short-description>"
+  fi
+fi
+
+# Professional repositories: no tool or model attribution reaches the ledger.
+if [ "$personal" != "1" ]; then
+  ghost="professional repository: no tool or model attribution reaches the ledger"
+  attribution='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|generated with'
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(-C +[^ ]+ +)?commit\b' && printf '%s' "$flat" | grep -Eiq "$attribution"; then
+    refuse "$ghost (commit trailer or generated-with line)"
+  fi
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)gh +(pr +(create|edit|comment)|issue +(create|comment|edit))\b' && printf '%s' "$flat" | grep -Eiq "$attribution"; then
+    refuse "$ghost (pull request or issue text)"
+  fi
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(-C +[^ ]+ +)?push[^;&|]*[ :](refs/heads/)?(claude|codex|copilot)/'; then
+    refuse "$ghost (tool-named branch)"
   fi
 fi
 
@@ -73,7 +95,7 @@ fi
 if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(checkout|switch) +main\b *[;&|] *git +merge\b'; then
   refuse "merging into main is refused; the owner merges main"
 fi
-if [ "$allow_merge" != "1" ]; then
+if [ "$personal" != "1" ]; then
   if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(checkout|switch) +develop\b *[;&|] *git +merge\b'; then
     refuse "merging into develop is refused; the owner merges"
   fi

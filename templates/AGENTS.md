@@ -34,7 +34,7 @@ Bun, pinned in `package.json` and CI. Where another tool shadows the pinned Bun,
 
 Commits and changed source lines describe the software, not the process that produced it: no names of people, tools, models, sessions or run identifiers, and no work-tracking labels. Reference issues and pull requests by number. `scripts/checks/hygiene.ts` enforces this in `bun run check`.
 
-Co-author trailers are allowed in the form `Co-authored-by: Name <address>`, with a noreply address only.
+No attribution trailer and no generated-with line: every commit, pull request and issue is the author's own. Branch names never name a tool.
 
 ## Never
 

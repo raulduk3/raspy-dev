@@ -13,14 +13,14 @@ bin/new-repo <directory> [--owner <github-login>] [--github <owner>/<name>] [--p
 - Creates the repository on `main`, tags `v0.1.0` on the first commit so the version derives, and creates `develop`.
 - With `--github`, creates the GitHub repository with `gh`, pushes both branches and applies `github/rulesets/develop.json` and `github/rulesets/main.json`.
 
+If the repository is the owner's own, add its path to `~/.config/dev-platform/personal.conf`.
+
 ## 2. GitHub, by hand
 
 1. Settings, General: default branch `develop`; allow merge commits only; delete head branches on merge.
-2. Settings, Collaborators: add the bot with the Triage role (`runbooks/bot-setup.md`).
-3. Settings, Code security: enable Dependabot alerts and security updates.
-4. If the plan allows automatic code review, turn it on for every pull request.
-5. Create the milestone for the first minor version.
-6. Pin one issue titled `Development loop` for the daily loop's cycle comments.
+2. Settings, Code security: enable Dependabot alerts and security updates.
+3. If the plan allows automatic code review, turn it on for every pull request.
+4. Create the milestone for the first minor version.
 
 ## 3. First pull request
 
