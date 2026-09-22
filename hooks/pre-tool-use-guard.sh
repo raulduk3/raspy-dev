@@ -74,7 +74,7 @@ fi
 # Professional repositories: no tool or model attribution reaches the ledger.
 if [ "$personal" != "1" ]; then
   ghost="professional repository: no tool or model attribution reaches the ledger"
-  attribution='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|generated with'
+  attribution='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|(^|[^a-z])generated with'
   if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(-C +[^ ]+ +)?commit\b' && printf '%s' "$flat" | grep -Eiq "$attribution"; then
     refuse "$ghost (commit trailer or generated-with line)"
   fi

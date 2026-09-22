@@ -100,7 +100,7 @@ owner_terminal() {  # one exemption: close --push without --ready in a personal 
   echo "loop: '$verb' is the owner's own act and runs in a terminal, never from an agent" >&2; exit 4
 }
 # The ghost check's markers, the guard hook's: a tool-named Co-authored-by trailer or a generated-with line.
-ATTRIBUTION='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|generated with'
+ATTRIBUTION='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|(^|[^a-z])generated with'
 # The open day's date decides the ledger directory; without an open day, today's.
 day="$(day_branch)"; dayd="${day#loop/}"; [ -n "$day" ] || dayd="$today"
 out="$ctl/$dayd"; mkdir -p "$out/workers"

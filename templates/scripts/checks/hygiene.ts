@@ -108,7 +108,7 @@ const TRAILER_LINE =
 const CO_AUTHOR_TRAILER = /^co-authored-by:\s*(.*)$/i;
 /** A co-author name or address that names a tool or model. */
 export const ATTRIBUTION = /anthropic|openai|claude|codex|copilot|noreply@/i;
-const GENERATED_WITH = /generated with/i;
+const GENERATED_WITH = /\bgenerated with/i;
 
 function exempt(file: string, token: string): boolean {
   return EXEMPTIONS.some(
