@@ -44,6 +44,15 @@ class NewRepo(unittest.TestCase):
         self.assertEqual((self.config / 'personal.conf').read_text(), f'{game}\n')
         self.assertIn('registered', result.stdout)
 
+    def test_lint_and_format_skip_what_openrig_and_the_loop_place_in_a_worktree(self):
+        result = self.new_repo()
+        game = self.tmp / 'game'
+        eslint = (game / 'eslint.config.js').read_text()
+        self.assertIn('ignores: ["node_modules/", "dist/", ".openrig/", ".claude/"]', eslint, result.stderr)
+        ignored = (game / '.prettierignore').read_text().splitlines()
+        for pattern in ('docs/incoming.html', '.openrig/', '.claude/', '.worker-*', 'CLAUDE.md', 'AGENTS.md'):
+            self.assertEqual(ignored.count(pattern), 1, pattern)
+
     def test_an_already_listed_repository_is_not_told_to_add_itself(self):
         self.config.mkdir()
         game = self.tmp / 'game'

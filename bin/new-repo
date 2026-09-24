@@ -107,16 +107,20 @@ JSON
 cat > "$directory/.prettierrc.json" <<'JSON'
 { "printWidth": 100, "semi": true, "singleQuote": false, "trailingComma": "all", "endOfLine": "lf" }
 JSON
-# Hand-edited HTML must not fail format:check. Add to a .prettierignore the templates carry.
+# Hand-edited HTML must not fail format:check, nor may the files OpenRig and the loop place in a
+# worker worktree (context collector, local settings, worker brief and report, managed instruction
+# blocks). Add to a .prettierignore the templates carry.
 touch "$directory/.prettierignore"
-grep -qxF "docs/incoming.html" "$directory/.prettierignore" || echo "docs/incoming.html" >> "$directory/.prettierignore"
+for pattern in docs/incoming.html .openrig/ .claude/ '.worker-*' CLAUDE.md AGENTS.md; do
+  grep -qxF "$pattern" "$directory/.prettierignore" || echo "$pattern" >> "$directory/.prettierignore"
+done
 cat > "$directory/eslint.config.js" <<'JS'
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["node_modules/", "dist/"] },
+  { ignores: ["node_modules/", "dist/", ".openrig/", ".claude/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
