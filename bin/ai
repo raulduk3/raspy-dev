@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shlex
 import shutil
 import socket
 import subprocess
@@ -593,8 +594,12 @@ def close_team_spaces(team):
 
 def team_layout(seats, folder):
     """rig tui in a column on the left, then a tile for every running agent."""
-    tui = {"type": "pane", "label": "rig tui", "cwd": str(folder),
-           "command": [sys.executable, str(ROOT / "bin/rig"), "tui"]}
+    # Quitting rig tui must not close its pane, or the space loses its dashboard; the pane
+    # offers it again. Reduced motion stops its blinking command line and row flashes.
+    rig_tui = shlex.join([sys.executable, str(ROOT / "bin/rig"), "tui"])
+    tui = {"type": "pane", "label": "rig tui", "cwd": str(folder), "env": {"OPENRIG_REDUCED_MOTION": "1"},
+           "command": ["sh", "-c", f"while :; do {rig_tui}; printf '\\nrig tui closed. Press Enter to open it again.\\n'; "
+                                   "read _ || exit; done"]}
     # Tiles are labeled with the seat's session name: OpenRig's herdr adapter matches the same
     # label, so opening a seat from rig tui focuses its tile here instead of making a new space.
     agents = [{"type": "pane", "label": s["canonicalSessionName"], "command": ["tmux", "attach", "-t", s["canonicalSessionName"]]}

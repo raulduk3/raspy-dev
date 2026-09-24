@@ -188,8 +188,9 @@ class Menu(unittest.TestCase):
         applied = next(p for m, p in fake.calls if m == 'layout.apply')
         self.assertEqual(applied['tab_label'], 'team')
         tui, agents = applied['root']['first'], applied['root']['second']
-        self.assertEqual((tui['label'], tui['cwd'], tui['command'][-1]), ('rig tui', '/p/project', 'tui'))
-        self.assertTrue(tui['command'][1].endswith('bin/rig'))
+        self.assertEqual((tui['label'], tui['cwd'], tui['env']), ('rig tui', '/p/project', {'OPENRIG_REDUCED_MOTION': '1'}))
+        self.assertEqual(tui['command'][:2], ['sh', '-c'])
+        self.assertIn('bin/rig tui; printf', tui['command'][2])  # quitting it leaves the pane, offering it again
 
         def leaves(node):
             return [node] if node['type'] == 'pane' else leaves(node['first']) + leaves(node['second'])
