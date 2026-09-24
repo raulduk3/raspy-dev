@@ -93,14 +93,19 @@ need_day() {
   echo "$d"
 }
 day_wt() { echo "$(repo_dir)/.claude/worktrees/day-${1#loop/}"; }
+repository_identity() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] && (cd "$common" && pwd -P)
+}
 is_personal() {  # 1 when the checkout is listed in personal.conf, as the guard hook reads it; else 0
   local d f="${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}" line entry
-  d="$(dirname "$(git -C "$(repo_dir)" rev-parse --path-format=absolute --git-common-dir)")"
+  d="$(repository_identity "$(repo_dir)")" || { echo 0; return 0; }
   if [ -f "$f" ]; then
     while IFS= read -r line; do
       case "$line" in ''|'#'*) continue ;; esac
-      entry="${line/#\~/$HOME}"
-      case "$d/" in "$entry"/*) echo 1; return 0 ;; esac
+      entry="$(repository_identity "${line/#\~/$HOME}")" || continue
+      [ "$d" != "$entry" ] || { echo 1; return 0; }
     done < "$f"
   fi
   echo 0

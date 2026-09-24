@@ -234,6 +234,26 @@ class LoopTests(Fixture):
         self.loop('start')
         self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
 
+    def test_personal_symlink_default_main(self):
+        self.setup_remote()
+        alias = self.base / 'repo-alias'
+        alias.symlink_to(self.repo, target_is_directory=True)
+        self.configure(base='', path=alias)
+        (self.config / 'personal.conf').write_text(str(alias) + '\n')
+        self.loop('start')
+        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
+
+    def test_personal_linked_alias_default_main(self):
+        self.setup_remote()
+        linked = self.base / 'linked'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'test/linked', linked)
+        alias = self.base / 'linked-alias'
+        alias.symlink_to(linked, target_is_directory=True)
+        self.configure(base='', path=alias)
+        (self.config / 'personal.conf').write_text(str(alias) + '\n')
+        self.loop('start')
+        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
+
     def test_professional_stays_develop_even_if_default_main(self):
         self.run_cmd('git', 'branch', 'develop')
         self.setup_remote()
@@ -340,6 +360,53 @@ class GuardTests(Fixture):
     def test_ghx_professional_bot_refused_before_credentials(self):
         self.configure(identity='bot')
         self.run_cmd('bash', GHX, 'test/repo', 'pr', 'list', expected=3)
+
+
+class PersonalIdentityTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.linked = self.base / 'linked'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'test/linked', self.linked)
+        self.alias = self.base / 'repo-alias'
+        self.alias.symlink_to(self.repo, target_is_directory=True)
+        self.linked_alias = self.base / 'linked-alias'
+        self.linked_alias.symlink_to(self.linked, target_is_directory=True)
+        # Credential access always stops at a local fixture; no secret is read.
+        self.op_calls = self.base / 'op.calls'
+        self.env['OP_CALLS'] = str(self.op_calls)
+        op = self.fakebin / 'op'
+        op.write_text('#!/bin/sh\necho called >> "$OP_CALLS"\nexit 1\n')
+        op.chmod(0o755)
+
+    def assert_identity(self, checkout, entry, personal):
+        self.configure(base='', identity='bot', path=checkout)
+        (self.config / 'personal.conf').write_text(str(entry) + '\n')
+        command = 'git commit -m "Generated with Codex"'
+        self.run_cmd('bash', GUARD, input=json.dumps({'cwd': str(checkout),
+                     'tool_input': {'command': command}}), expected=0 if personal else 2)
+        self.run_cmd('bash', GHX, 'test/repo', 'pr', 'list', expected=4 if personal else 3)
+        self.assertEqual(self.op_calls.exists(), personal)
+        if self.op_calls.exists():
+            self.op_calls.unlink()
+
+    def test_main_linked_and_symlink_entries_share_exact_identity(self):
+        paths = (self.repo.resolve(), self.alias, self.linked.resolve(), self.linked_alias)
+        for checkout in paths:
+            for entry in paths:
+                with self.subTest(checkout=checkout, entry=entry):
+                    self.assert_identity(checkout, entry, True)
+
+    def test_siblings_nested_repos_and_nonrepos_stay_professional(self):
+        sibling = self.base / 'repo-other'
+        nested = self.repo / 'nested-professional'
+        for checkout in (sibling, nested):
+            self.run_cmd('git', 'init', '-q', '-b', 'main', checkout)
+            with self.subTest(checkout=checkout):
+                self.assert_identity(checkout, self.alias, False)
+                self.assert_identity(checkout, self.repo.resolve(), False)
+        for entry in (self.base, self.base / 'missing'):
+            with self.subTest(entry=entry):
+                self.assert_identity(self.repo, entry, False)
 
 
 class WorkerBoundTests(Fixture):
