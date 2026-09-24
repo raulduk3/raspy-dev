@@ -1,4 +1,4 @@
-"""Read Markdown task records without an application database or write side effects."""
+"""Read Markdown tasks and maintain daily notes without an application database."""
 import argparse
 from datetime import date
 import json
@@ -90,6 +90,14 @@ def main(argv=None):
     tasks.add_argument('--text', default='', help='Case-insensitive literal text substring')
     tasks.add_argument('--include-history', action='store_true', help='Also include archive, Morty records, templates and view files')
     tasks.add_argument('--json', action='store_true')
+    for name in ('log-path','log-ensure','log-append','journal-ensure','journal-line'):
+        command = sub.add_parser(name, help='Daily journal operation using existing date paths')
+        command.add_argument('date', nargs='?', type=iso_date)
+        if name == 'log-append':
+            command.add_argument('--title', required=True)
+            command.add_argument('--body', help='Otherwise read body from stdin')
+        if name == 'journal-line':
+            command.add_argument('--line', required=True)
     args = parser.parse_args(argv)
     if args.root is None:
         parser.error('set --root or JOURNAL_ROOT; the current directory is never assumed')
@@ -97,6 +105,13 @@ def main(argv=None):
         root = args.root.expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError('journal root must be a directory')
+        if args.command != 'tasks':
+            from journal_daily import update
+            body = getattr(args, 'body', None)
+            if args.command == 'log-append' and body is None:
+                body = sys.stdin.read()
+            print(json.dumps(update(root, args.command, args.date, getattr(args,'title',None), body, getattr(args,'line',None))))
+            return 0
         rows = []
         for row in records(root, args.include_history):
             if args.status == 'open' and row['status'] in ('done','cancelled'):
