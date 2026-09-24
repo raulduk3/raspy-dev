@@ -1,3 +1,5 @@
+> Historical proposal: mandatory container execution is superseded by the [unified specification](AI-ECOSYSTEM-SPEC.md). The experiments below remain optional-backend evidence; their original owner-requirement wording is historical.
+
 # Pi through containerized account access
 
 Owner requirement: Pi must use the account environments selected by the account

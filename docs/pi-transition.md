@@ -31,18 +31,15 @@ The archive contract is `sqlite-consistent/{main,hermes,neo}.sqlite`. SQLite is 
 
 The observed installed Rig provider switch implementation returns `switch_execution_not_yet_wired`. A profile label or TUI menu cannot establish successful account binding. The account service must verify runtime identity and report actual results.
 
-The owner selected OpenAI Apple for the initial named-agent conversations and
-subsequently clarified that Pi must use the containerized account access being
-implemented with the account service. Do not pursue a separate host Pi login or
-present the earlier host auth profile as the target architecture. Resolve Pi's
-execution/provider access through that same account service and its isolated
-environments. Whether the selected native authentication can support Pi directly
-must be demonstrated through supported interfaces; a container or account label
-alone does not establish compatible credentials or entitlement. Do not copy
-tokens between native stores or substitute API billing for subscription access.
-Authentication and a real inference/tool round trip remain acceptance gates.
+The current target is host-native Pi through the shared account service, with
+OpenAI Apple as the initial preference and independent supported Pi authentication.
+The earlier mandatory-container direction is superseded. Native profile isolation
+must preserve host cwd/HOME; do not copy tokens or silently substitute API billing.
+See [the unified specification](AI-ECOSYSTEM-SPEC.md) for current evidence and gates.
+A real ephemeral Pi inference has been reported by the implementation task; full
+role launch, account attribution and durable authenticated resume remain open.
 
-The existing account selector has only a Claude development-loop worker adapter. Codex execution integration and both providers' Rig account isolation remain acceptance work.
+The host account service now has native launch support. Both providers’ complete Rig profile propagation remains acceptance work.
 
 ## Role resource loading
 
@@ -66,7 +63,7 @@ unchanged SHA-256 hashes and no private content printed. This is tool routing,
 not OS isolation: same-user shell access can still read accessible files. It also
 does not prove an authenticated model selects relevant memories correctly.
 
-`node integrations/pi/check-role-context.mjs` verifies all five role/scope combinations from two unrelated invoking directories using the installed Pi loader. It demonstrates context selection and paths, not authenticated execution, native resume, account selection, process ownership or OpenRig integration. The previous host Pi auth profile is not the intended login path; containerized account-service integration is required.
+`node integrations/pi/check-role-context.mjs` verifies all five role/scope combinations from two unrelated invoking directories using the installed Pi loader. It demonstrates context selection and paths, not authenticated execution, native resume, account selection, process ownership or OpenRig integration. Host-native account-service integration is the current target; container experiments are optional backend evidence.
 
 ## Persistent role sessions
 
@@ -145,3 +142,30 @@ user-facing command still needs to resolve a real conversation, identity and
 verified account through the account service. Authenticated inference, protected
 search credentials, real account attribution and management of model/login menu
 choices remain open; the offline fixture's account reference is explicitly fake.
+
+## Role launcher
+
+`bin/ai-role` is the account-bound consumer of the components above. `ai-role plan
+<conversation-id>` prints what a launch would do; `ai-role launch <conversation-id>`
+performs it in an interactive terminal. The conversation comes from `ai-session
+conversation create`; the account is `--account` or the registry's selected account;
+the Pi profile is the host account service's `accounts/pi/<account>` directory and
+must report `configured` through the existing read-only native check. The role
+identity is `~/.local/share/dev-platform/agents/<agent>/identity.md`, falling back to
+the platform's `agents/<agent>/identity.md`. The model is `--model` or the profile's
+saved default for that provider.
+
+The launcher refuses inherited provider overrides, missing identities, unconfigured
+profiles, and resume files outside the conversation's `native/pi` directory. It
+prints one session header (agent, scope, cwd, model, account, rig binding), acquires
+the conversation writer lock with `pi_launch.exec_conversation`, and execs Node on
+`integrations/pi/role-launch.mjs`, which builds Pi's model runtime exactly as Pi's own
+entry does and starts `role-terminal.mjs`. The plan carries no credentials; the Node
+entry reads only the profile directory Pi itself would read.
+
+Attribution stays honest: the plan records the account and the Pi profile state with
+`identity: unverified`. A Pi sign-in is a separate native login from that account's
+Codex or Claude binding; the launcher does not claim they are the same identity or
+share quota. `tests/test_role_launch.py` covers the plan rules and a real offline PTY
+launch through the lock boundary with a synthetic profile. An authenticated Iztac
+launch with inference is a user-run acceptance step, not something these tests claim.

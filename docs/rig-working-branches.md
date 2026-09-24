@@ -40,8 +40,8 @@ gating both writing and review.
 - **Seats** come from OpenRig. A rig starts with the root and overseer pods and an
   empty workers pod. Each dispatched issue becomes one `rig add <rig> workers
   <member-fragment>`, which is the same call that added the overseer to
-  `apple-four` today. The member fragment is four lines: id, agent, runtime, cwd,
-  plus `config_home` when the account is isolated.
+  `apple-four` today. The member fragment is six lines: id, label, agent_ref, profile,
+  runtime, cwd, plus `config_home` when the account is isolated.
 - **Templates** live in `integrations/openrig`. The control agent stays silent at
   boot. Issue briefs are delivered the way the loop already delivers them, in the
   worker's directory, not through OpenRig startup files.
@@ -72,4 +72,4 @@ gating both writing and review.
 `rig add` onto a running rig works with the patched daemon: `intake-overseer@apple-four`
 is a Codex seat on the native Apple home, added to a live four-seat Claude rig
 without restarting anything. Per-seat account pinning through `config_home` was
-proven earlier the same day. Nothing above needs a change to OpenRig.
+proven earlier the same day. Nothing above needs a further change to OpenRig beyond the `config_home` patch.
