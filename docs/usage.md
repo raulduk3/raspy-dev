@@ -64,6 +64,23 @@ path, 0600 file inside a 0700 directory.
 - It cannot crash a Claude session. Any failure — bad JSON, a write error, a missing flag —
   prints one harmless status line and exits 0, always.
 
+## A second source: OpenRig seats
+
+A Claude seat launched by OpenRig runs OpenRig's own status line, not the platform's,
+because OpenRig writes a project-level `.claude/settings.local.json` into the seat's
+folder and project-level wins. Those seats therefore never write the platform cache.
+`ai-usage` reads OpenRig's seat-keyed cache as well (`~/.openrig/state/provider-usage/`,
+one file per seat) and attributes each reading to an account by the seat's home: a seat
+pinned with `config_home` belongs to the account registered at that home; an unpinned
+seat ran in the daemon's default home, which is the account bound as `native_default`.
+The daemon database is opened read-only for that mapping and nothing is written to it.
+
+Across both sources the freshest reading that still has a live window wins, and the row
+names its source (`status line cache` or `OpenRig seat <name>`). A seat whose runtime is
+Codex contributes nothing, since Codex usage is queried live. Stock OpenRig 0.5.14
+discarded every window because it expected a string reset time and Claude sends a number;
+the patched runtime on this machine normalizes both, and the fix is offered upstream.
+
 ## Reading the table honestly
 
 Every row carries an explicit `source` and `freshness`, not just a number:

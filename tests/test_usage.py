@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR = ROOT / 'integrations/claude/usage-collector.py'
@@ -257,3 +258,110 @@ class UnifiedView(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OpenRigSeatSource(unittest.TestCase):
+    """OpenRig keeps its own status line cache, one file per seat. A reading is attributed to
+    the account whose home the seat ran in, by the node's config_home, and the freshest
+    reading with a live window wins. Everything here is a fake OpenRig home under a temp dir;
+    the real ~/.openrig is never read because `openrig_home` is passed explicitly."""
+
+    def setUp(self):
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(('ANTHROPIC_', 'CLAUDE_CODE_USE_'))}
+        patcher = unittest.mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        temp = tempfile.TemporaryDirectory(prefix='usage-openrig-')
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.apple_home = self.root / 'homes' / 'anthropic-apple'
+        self.apple_home.mkdir(parents=True)
+        self.data = {'version': 1, 'selected': None, 'bindings': {
+            'anthropic-apple': {'home': str(self.apple_home), 'expected_email': 'a@example.test'},
+            'anthropic-gmail': {'home': str(self.root / 'homes' / 'default'), 'expected_email': 'g@example.test',
+                                'native_default': True},
+        }}
+        self.openrig = self.root / 'openrig'
+        (self.openrig / 'state' / 'provider-usage').mkdir(parents=True)
+        self.cache_root = self.root / 'cache'
+        self.cache_root.mkdir()
+        self.now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+        import sqlite3
+        conn = sqlite3.connect(self.openrig / 'openrig.sqlite')
+        conn.executescript('CREATE TABLE nodes (id TEXT, runtime TEXT, config_home TEXT);'
+                           'CREATE TABLE sessions (node_id TEXT, session_name TEXT);')
+        conn.executemany('INSERT INTO nodes VALUES (?, ?, ?)', [
+            ('n-apple', 'claude-code', str(self.apple_home)),
+            ('n-default', 'claude-code', None),
+            ('n-codex', 'codex', str(self.apple_home)),
+        ])
+        conn.executemany('INSERT INTO sessions VALUES (?, ?)', [
+            ('n-apple', 'lead@team'), ('n-default', 'control@dev'), ('n-codex', 'planner@team')])
+        conn.commit()
+        conn.close()
+
+    def seat_file(self, seat, as_of, five_hour=None, seven_day=None):
+        limits = {}
+        if five_hour:
+            limits['five_hour'] = {'usedPercent': five_hour[0], 'resetsAt': five_hour[1]}
+        if seven_day:
+            limits['seven_day'] = {'usedPercent': seven_day[0], 'resetsAt': seven_day[1]}
+        body = {'seatSession': seat, 'asOf': as_of}
+        if limits:
+            body.update(accountKind='subscription', rateLimits=limits)
+        (self.openrig / 'state' / 'provider-usage' / (seat + '.json')).write_text(json.dumps(body))
+
+    def observe(self, data):
+        return [{'account': a, 'runtime': 'claude', 'state': 'quota_unknown', 'capabilities': {}, 'quota': None,
+                 'observed_at': 0, 'remaining_percent': None, 'reason': None}
+                for a in ('anthropic-apple', 'anthropic-gmail')] + [
+                {'account': a, 'runtime': 'codex', 'state': 'unverified', 'capabilities': {}, 'quota': None,
+                 'observed_at': 0, 'remaining_percent': None, 'reason': None}
+                for a in ('openai-apple', 'openai-gmail')]
+
+    def view(self):
+        v = usage.unified_view(self.data, observe=self.observe, cache_root=self.cache_root,
+                               now=self.now, openrig_home=self.openrig)
+        return {r['account']: r for r in v['accounts']}
+
+    def test_pinned_seat_reading_is_attributed_to_the_account_owning_that_home(self):
+        self.seat_file('lead@team', '2026-09-24T11:50:00.000Z', five_hour=(33, '2026-09-24T15:00:00.000Z'))
+        row = self.view()['anthropic-apple']
+        self.assertEqual(row['state'], 'cached')
+        self.assertEqual(row['source'], 'OpenRig seat lead@team')
+        self.assertEqual(row['freshness'], 'OpenRig seat lead@team, 10 minutes old')
+        self.assertEqual(row['windows'][0]['used_percent'], 33)
+        self.assertEqual(self.view()['anthropic-gmail']['freshness'], 'unknown: no reading yet')
+
+    def test_unpinned_seat_reading_goes_to_the_native_default_account(self):
+        self.seat_file('control@dev', '2026-09-24T11:59:00.000Z', seven_day=(8, '2026-09-30T00:00:00.000Z'))
+        rows = self.view()
+        self.assertEqual(rows['anthropic-gmail']['source'], 'OpenRig seat control@dev')
+        self.assertEqual(rows['anthropic-apple']['freshness'], 'unknown: no reading yet')
+
+    def test_codex_seats_and_files_without_windows_contribute_nothing(self):
+        self.seat_file('planner@team', '2026-09-24T11:59:00.000Z', five_hour=(99, '2026-09-24T15:00:00.000Z'))
+        self.seat_file('lead@team', '2026-09-24T11:59:00.000Z')  # asOf only, the pre-fix OpenRig shape
+        self.assertEqual(self.view()['anthropic-apple']['freshness'], 'unknown: no reading yet')
+
+    def test_freshest_reading_across_both_sources_wins_and_names_its_source(self):
+        older = (self.now - timedelta(minutes=40)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        usage.cache_path('anthropic-apple', self.cache_root).parent.mkdir(exist_ok=True)
+        usage.cache_path('anthropic-apple', self.cache_root).write_text(json.dumps({
+            'account': 'anthropic-apple', 'captured_at': older, 'source': 'claude-code-statusline',
+            'windows': {'five_hour': {'used_percentage': 50, 'resets_at': 4102444800}}}))
+        self.seat_file('lead@team', '2026-09-24T11:55:00.000Z', five_hour=(61, '2026-09-24T15:00:00.000Z'))
+        row = self.view()['anthropic-apple']
+        self.assertEqual(row['source'], 'OpenRig seat lead@team')
+        self.assertEqual(row['windows'][0]['used_percent'], 61)
+        # and the platform cache still wins when it is the newer one
+        newer = (self.now - timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        usage.cache_path('anthropic-apple', self.cache_root).write_text(json.dumps({
+            'account': 'anthropic-apple', 'captured_at': newer, 'source': 'claude-code-statusline',
+            'windows': {'five_hour': {'used_percentage': 50, 'resets_at': 4102444800}}}))
+        self.assertEqual(self.view()['anthropic-apple']['source'], 'status line cache')
+
+    def test_missing_openrig_home_or_database_is_simply_no_source(self):
+        self.assertEqual(usage.openrig_seat_readings(self.root / 'nowhere'), [])
+        (self.openrig / 'openrig.sqlite').unlink()
+        self.assertEqual(usage.openrig_seat_readings(self.openrig), [])

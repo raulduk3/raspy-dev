@@ -83,6 +83,27 @@ class ProfilesBase(unittest.TestCase):
 
 
 class BareClaudeHome(ProfilesBase):
+    def test_bare_home_records_the_chrome_dialog_as_answered_with_browser_tools_off(self):
+        home = self.claude_home()
+        self.apply_claude()
+        state = json.loads((home / '.claude.json').read_text())
+        self.assertIs(state['hasCompletedClaudeInChromeOnboarding'], True)
+        self.assertIs(state['claudeInChromeDefaultEnabled'], False)
+        self.assertEqual((home / '.claude.json').stat().st_mode & 0o777, 0o600)
+        again = json.loads((home / '.claude.json').read_text())
+        self.apply_claude()
+        self.assertEqual(json.loads((home / '.claude.json').read_text()), again)
+
+    def test_existing_chrome_choice_in_claude_json_is_preserved(self):
+        home = self.claude_home()
+        (home / '.claude.json').write_text(json.dumps({'claudeInChromeDefaultEnabled': True, 'projects': {'/x': {}}}))
+        self.apply_claude()
+        state = json.loads((home / '.claude.json').read_text())
+        self.assertIs(state['claudeInChromeDefaultEnabled'], True)
+        self.assertIs(state['hasCompletedClaudeInChromeOnboarding'], True)
+        self.assertEqual(state['projects'], {'/x': {}})
+        self.assertTrue(any(p.name.startswith('.claude.json.') and p.name.endswith('.bak') for p in home.iterdir()))
+
     def test_bare_home_gains_hooks_instructions_and_status_line(self):
         home = self.claude_home()
         result = self.apply_claude()
@@ -111,7 +132,12 @@ class BareClaudeHome(ProfilesBase):
         self.assertIn(profiles.MANAGED_BEGIN, claude_md.read_text())
 
         # Nothing else was created in the home.
-        self.assertEqual(sorted(p.name for p in home.iterdir()), ['CLAUDE.md', 'settings.json'])
+        self.assertEqual(sorted(p.name for p in home.iterdir()),
+                         ['.claude.json', 'CLAUDE.md', 'settings.json'])
+        # The state file exists only to skip a first-run dialog. Nothing else is put in it.
+        state = json.loads((home / '.claude.json').read_text())
+        self.assertEqual(sorted(state), ['claudeInChromeDefaultEnabled',
+                                         'hasCompletedClaudeInChromeOnboarding'])
 
     def test_second_apply_is_byte_identical_noop(self):
         home = self.claude_home()

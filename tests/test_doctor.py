@@ -192,3 +192,13 @@ class Doctor(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TmuxServerEnvironment(unittest.TestCase):
+    def test_only_provider_override_names_are_reported_from_a_listing(self):
+        from ai_ecosystem import doctor
+        listing = ('ANTHROPIC_BASE_URL=http://127.0.0.1:1\nOPENCLAW_SERVICE_KIND=gateway\n'
+                   'CLAUDE_CODE_USE_X=1\nPATH=/usr/bin\nTMPDIR=/tmp\n-CODEX_HOME\n')
+        self.assertEqual(doctor.tmux_provider_overrides(listing),
+                         ['ANTHROPIC_BASE_URL', 'OPENCLAW_SERVICE_KIND', 'CLAUDE_CODE_USE_X'])
+        self.assertEqual(doctor.tmux_provider_overrides(''), [])

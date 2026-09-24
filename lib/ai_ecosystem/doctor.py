@@ -147,9 +147,33 @@ def check_laya(home, probe):
     return out
 
 
+PROVIDER_OVERRIDE_PREFIXES = ('ANTHROPIC_', 'OPENCLAW_', 'CLAUDE_CODE_USE_')
+
+
+def tmux_provider_overrides(listing):
+    """Variable names in a `tmux show-environment -g` listing that would override a seat's provider."""
+    return [line.split('=', 1)[0] for line in listing.splitlines()
+            if '=' in line and not line.startswith('-') and line.split('=', 1)[0].startswith(PROVIDER_OVERRIDE_PREFIXES)]
+
+
+def check_tmux_environment():
+    """Every OpenRig seat inherits the tmux server's global environment. Provider overrides
+    there (a stale proxy URL, another agent's service variables) reach every new seat."""
+    tmux = shutil.which('tmux')
+    if not tmux:
+        return {'state': 'missing'}
+    listing = subprocess.run([tmux, 'show-environment', '-g'], text=True, capture_output=True)
+    if listing.returncode != 0:
+        return {'state': 'unavailable', 'note': 'no tmux server running'}
+    overrides = tmux_provider_overrides(listing.stdout)
+    return {'state': 'broken' if overrides else 'ok', 'overrides': overrides,
+            'fix': 'dev-workspace start removes these before launching; or: tmux set-environment -g -u <NAME>'}
+
+
 def doctor(home, platform, probe=False):
     return {'commands': check_commands(), 'skills': check_skills(home, platform),
-            'platform_check': check_platform(platform), 'laya': check_laya(home, probe)}
+            'platform_check': check_platform(platform), 'laya': check_laya(home, probe),
+            'tmux': {'server_environment': check_tmux_environment()}}
 
 
 def main(argv=None):

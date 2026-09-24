@@ -111,3 +111,52 @@ elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
         result = self.call('start', 'codex', '--cwd', str(repo))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len([r for r in self.records() if r['args'][0] == 'up']), 2)
+
+
+class TmuxEnvironmentScrub(unittest.TestCase):
+    """A seat inherits the tmux server's global environment. `start` must unset provider
+    overrides there first. A fake tmux on PATH records what the launcher asks it to do.
+    Reuses the launcher fixture without inheriting its tests."""
+    call = WorkspaceLauncherTests.call
+    records = WorkspaceLauncherTests.records
+
+    def setUp(self):
+        WorkspaceLauncherTests.setUp(self)
+        fake_bin = self.root / 'fakebin'
+        fake_bin.mkdir()
+        tmux = fake_bin / 'tmux'
+        tmux.write_text('''#!/usr/bin/env python3
+import json, os, sys
+a = sys.argv[1:]
+with open(os.environ['CALLS'], 'a') as f:
+    f.write(json.dumps({'tmux': a}) + '\\n')
+if a == ['show-environment', '-g']:
+    print('ANTHROPIC_BASE_URL=http://127.0.0.1:1')
+    print('OPENCLAW_SERVICE_KIND=gateway')
+    print('PATH=/usr/bin')
+    print('-CODEX_HOME')
+''')
+        tmux.chmod(0o755)
+        self.env['PATH'] = os.pathsep.join([str(fake_bin), self.env.get('PATH', '')])
+
+    def test_start_removes_provider_overrides_from_the_tmux_server_before_launching(self):
+        cwd = self.root / 'plain-folder'
+        cwd.mkdir()
+        result = self.call('start', 'codex', '--cwd', str(cwd))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tmux_calls = [r['tmux'] for r in self.records() if 'tmux' in r]
+        self.assertIn(['set-environment', '-g', '-u', 'ANTHROPIC_BASE_URL'], tmux_calls)
+        self.assertIn(['set-environment', '-g', '-u', 'OPENCLAW_SERVICE_KIND'], tmux_calls)
+        self.assertNotIn(['set-environment', '-g', '-u', 'PATH'], tmux_calls)
+        self.assertNotIn(['set-environment', '-g', '-u', 'CODEX_HOME'], tmux_calls)
+        self.assertIn('Removed inherited provider overrides', result.stdout)
+        rig_calls = [r['args'] for r in self.records() if 'args' in r]
+        # The scrub happens after the plan and before the real launch.
+        self.assertEqual(rig_calls[-1][0], 'up')
+        self.assertNotIn('--plan', rig_calls[-1])
+
+    def test_plan_never_touches_the_tmux_server(self):
+        cwd = self.root / 'plain-folder'
+        cwd.mkdir()
+        self.assertEqual(self.call('plan', 'codex', '--cwd', str(cwd)).returncode, 0)
+        self.assertEqual([r for r in self.records() if 'tmux' in r], [])

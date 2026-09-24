@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -13,6 +14,39 @@ VERSION = "0.5.14"
 NODE = "node-v24.14.0-darwin-arm64"
 ACCOUNTS = ("anthropic-apple", "anthropic-gmail", "openai-apple", "openai-gmail")
 PROVIDER = {"codex": "openai", "claude": "anthropic"}
+
+
+PROVIDER_OVERRIDE_PREFIXES = ("ANTHROPIC_", "OPENCLAW_", "CLAUDE_CODE_USE_")
+
+
+def tmux_provider_overrides(listing):
+    """Names in a `tmux show-environment -g` listing that would override a seat's provider."""
+    names = []
+    for line in listing.splitlines():
+        if "=" not in line or line.startswith("-"):
+            continue
+        name = line.split("=", 1)[0]
+        if name.startswith(PROVIDER_OVERRIDE_PREFIXES):
+            names.append(name)
+    return names
+
+
+def scrub_tmux_environment(tmux=None):
+    """Every new pane inherits the tmux server's global environment. A server that was
+    started from inside another agent's service carries that service's provider overrides;
+    one dead proxy URL there once kept every new Claude seat retrying a refused connection.
+    Unset those names at the server before a launch. Running panes are untouched."""
+    tmux = tmux or shutil.which("tmux")
+    if not tmux:
+        return []
+    listing = subprocess.run([tmux, "show-environment", "-g"], text=True, capture_output=True)
+    if listing.returncode != 0:
+        return []
+    removed = []
+    for name in tmux_provider_overrides(listing.stdout):
+        if subprocess.run([tmux, "set-environment", "-g", "-u", name], capture_output=True).returncode == 0:
+            removed.append(name)
+    return removed
 
 
 def account_runtime(account):
@@ -204,6 +238,9 @@ def main():
             command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
     run(*command, "--plan")
     if args.action == "start":
+        removed = scrub_tmux_environment()
+        if removed:
+            print("Removed inherited provider overrides from the tmux server: " + ", ".join(removed), flush=True)
         # No --yes: upstream retains permission/trust decisions. Starting the
         # control seat does not dispatch the development loop's workers.
         run(*command)

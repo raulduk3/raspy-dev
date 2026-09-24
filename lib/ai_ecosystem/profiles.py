@@ -9,8 +9,10 @@ single named account, idempotently, without ever touching credentials.
 HARD SAFETY RULES (enforced in code below, not just documented):
   * Never read, write, move, or back up auth.json, .credentials.json, or any
     other token/secret file. This module only ever opens a fixed, small set of
-    paths under a home: settings.json and CLAUDE.md for a Claude home;
-    AGENTS.md and rules/default.rules for a Codex home. It never lists a
+    paths under a home: settings.json, CLAUDE.md and .claude.json for a Claude
+    home; AGENTS.md and rules/default.rules for a Codex home. The .claude.json
+    write merges two first-run dialog keys and leaves every other key, including
+    anything the native client wrote there, exactly as it found them. It never lists a
     home's directory contents (no iterdir/listdir/glob against the home), so
     there is no code path that could stumble onto a credential file.
   * Never overwrite an existing file the platform did not itself author
@@ -264,6 +266,26 @@ def _provision_claude_settings(home, account_id, repo_root, install_root, dry_ru
     return result
 
 
+# A fresh Claude home shows a "Claude in Chrome extension detected" selection dialog before
+# its first prompt, and a managed seat launched there never becomes interactive within
+# OpenRig's readiness window. Record that dialog as answered, browser tools off, so a worker
+# home behaves like one the owner has already used. Only absent keys are set: an explicit
+# choice already in the file is preserved.
+CLAUDE_STATE_DEFAULTS = {
+    'hasCompletedClaudeInChromeOnboarding': True,
+    'claudeInChromeDefaultEnabled': False,
+}
+
+
+def _provision_claude_state(home, dry_run):
+    def merge(existing):
+        merged = dict(existing)
+        for key, value in CLAUDE_STATE_DEFAULTS.items():
+            merged.setdefault(key, value)
+        return merged
+    return _apply_json_file(home / '.claude.json', merge, dry_run)
+
+
 def _provision_instructions(dest, source, dry_run):
     if not source.is_file():
         raise ValueError('authoritative source missing: ' + str(source))
@@ -285,6 +307,7 @@ def _provision(home, kind, account_id, repo_root, default_home, install_root, dr
                              kind='settings'))
         actions.append(dict(_provision_instructions(home / 'CLAUDE.md', default_home / 'CLAUDE.md', dry_run),
                              kind='instructions', source=str(default_home / 'CLAUDE.md')))
+        actions.append(dict(_provision_claude_state(home, dry_run), kind='state'))
     elif kind == 'codex':
         actions.append(dict(_provision_instructions(home / 'AGENTS.md', default_home / 'AGENTS.md', dry_run),
                              kind='instructions', source=str(default_home / 'AGENTS.md')))

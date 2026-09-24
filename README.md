@@ -3,6 +3,8 @@
 Personal development platform. It holds the conventions every repository under this account is
 initialized to, and the tools that keep them in place.
 
+- `docs/how-it-connects.md`: the map of the whole setup, accounts, homes, seats, rigs and
+  OpenRig, for the person using it. Start there.
 - `templates/`: files copied into every new repository (agent instructions, contributing
   policy, pull request template, code owners, dependency updates, check and release workflows,
   the hygiene check, the version script, the decision record template, the empty specification

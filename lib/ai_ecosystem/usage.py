@@ -23,6 +23,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sqlite3
 import sys
 
 from . import accounts
@@ -83,6 +84,82 @@ def _load_claude_cache(account, root):
     return data if isinstance(data, dict) else None
 
 
+def _parse_iso(value):
+    """ISO 8601 with a trailing Z, with or without fractional seconds (OpenRig writes ms)."""
+    if not isinstance(value, str) or not value.endswith('Z'):
+        return None
+    try:
+        return datetime.fromisoformat(value[:-1] + '+00:00')
+    except ValueError:
+        return None
+
+
+def openrig_seat_readings(openrig_home):
+    """OpenRig's own status line cache: one `{seatSession, asOf, rateLimits}` file per seat under
+    `state/provider-usage/`. The daemon database maps a seat to its node's `config_home`, so a
+    reading can be attributed to the account whose home that seat actually ran in. Read-only:
+    the database is opened in read-only mode and nothing is written. A seat whose runtime is
+    not Claude, or whose file carries no windows, contributes nothing."""
+    usage_dir = Path(openrig_home) / 'state' / 'provider-usage'
+    db = Path(openrig_home) / 'openrig.sqlite'
+    if not usage_dir.is_dir() or not db.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
+        try:
+            rows = conn.execute('SELECT s.session_name, n.runtime, n.config_home FROM sessions s '
+                                'JOIN nodes n ON n.id = s.node_id').fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    seats = {name: (runtime, home) for name, runtime, home in rows}
+    readings = []
+    for path in sorted(usage_dir.glob('*.json')):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        seat = data.get('seatSession') if isinstance(data, dict) else None
+        if seat not in seats or seats[seat][0] != 'claude-code':
+            continue
+        limits = data.get('rateLimits')
+        windows = {}
+        if isinstance(limits, dict):
+            for key in ('five_hour', 'seven_day'):
+                window = limits.get(key)
+                if not isinstance(window, dict):
+                    continue
+                used, reset = window.get('usedPercent'), _parse_iso(window.get('resetsAt'))
+                if isinstance(used, (int, float)) and not isinstance(used, bool) and reset is not None:
+                    windows[key] = {'used_percentage': used, 'resets_at': reset.timestamp()}
+        captured_at = _parse_iso(data.get('asOf'))
+        if captured_at is None or not windows:
+            continue
+        readings.append({'seat': seat, 'config_home': seats[seat][1], 'captured_at': captured_at,
+                         'windows': windows})
+    return readings
+
+
+def _seat_readings_for(account, data, readings):
+    """Attribute seat readings to one Claude account by home: a pinned `config_home` matches
+    that account's registered home; an unpinned seat ran in the daemon's default home, which
+    is the account bound with `native_default`."""
+    if not readings:
+        return []
+    binding = data['bindings'].get(account) or {}
+    home = str(accounts.home_for(data, account))
+    matches = []
+    for reading in readings:
+        pinned = reading['config_home']
+        if pinned is None:
+            if binding.get('native_default'):
+                matches.append(reading)
+        elif str(Path(pinned).expanduser().resolve()) == home:
+            matches.append(reading)
+    return matches
+
+
 def _parse_captured_at(value):
     if not isinstance(value, str):
         return None
@@ -113,7 +190,7 @@ def _cache_windows(cache, now):
     return windows
 
 
-def _claude_row(observation, cache_root, now):
+def _claude_row(observation, cache_root, now, seat_readings=None):
     account, reason = observation['account'], observation.get('reason')
     if observation['state'] != 'quota_unknown':
         # host_observations only reports 'unverified' or 'quota_unknown' for a
@@ -123,38 +200,50 @@ def _claude_row(observation, cache_root, now):
         return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'unverified',
                 'windows': None, 'source': 'none', 'freshness': 'unknown: account not verified',
                 'reason': reason}
+    # Two sources, same shape once normalized: the platform's own collector cache, and
+    # OpenRig's seat-keyed cache for seats that ran in this account's home. The freshest
+    # reading that still has a live window wins; the source is named in the row.
+    candidates = []
     cache = _load_claude_cache(account, cache_root)
-    if cache is None:
+    if cache is not None:
+        captured_at = _parse_captured_at(cache.get('captured_at'))
+        if captured_at is None:
+            return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'quota_unknown',
+                    'windows': None, 'source': 'status line cache', 'freshness': 'unknown: cache unreadable',
+                    'reason': 'cached file present but had no valid capture timestamp'}
+        candidates.append((captured_at, _cache_windows(cache, now), 'status line cache'))
+    for reading in seat_readings or []:
+        candidates.append((reading['captured_at'], _cache_windows(reading, now),
+                           'OpenRig seat ' + reading['seat']))
+    if not candidates:
         return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'quota_unknown',
                 'windows': None, 'source': 'none', 'freshness': 'unknown: no reading yet',
                 'reason': 'no status line reading yet; a session must run in this '
                           'account’s home with the collector installed'}
-    captured_at = _parse_captured_at(cache.get('captured_at'))
-    windows = _cache_windows(cache, now)
-    if captured_at is None:
-        return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'quota_unknown',
-                'windows': None, 'source': 'status line cache', 'freshness': 'unknown: cache unreadable',
-                'reason': 'cached file present but had no valid capture timestamp'}
+    live = [c for c in candidates if c[1]]
+    captured_at, windows, source = max(live or candidates, key=lambda c: c[0])
     age_seconds = max(0.0, (now - captured_at).total_seconds())
     age_minutes = int(age_seconds // 60)
     unit = 'minute' if age_minutes == 1 else 'minutes'
     stale = age_seconds >= STALE_AFTER_SECONDS
     if not windows:
         return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'quota_unknown',
-                'windows': None, 'source': 'status line cache',
+                'windows': None, 'source': source,
                 'freshness': f'unknown: last reading’s windows have since reset ({age_minutes} {unit} old)',
                 'reason': reason}
-    label = f'status line cache, {age_minutes} {unit} old'
+    label = f'{source}, {age_minutes} {unit} old'
     return {'account': account, 'client': CLAUDE_CLIENT, 'state': 'stale' if stale else 'cached',
-            'windows': windows, 'source': 'status line cache',
+            'windows': windows, 'source': source,
             'freshness': ('stale: ' + label) if stale else label, 'reason': reason}
 
 
-def unified_view(data, observe=host_observations, cache_root=None, now=None):
-    """One row per account in `environments.ACCOUNTS` order. `observe` and
-    `now` are injectable so tests never launch a real native probe or depend
-    on the wall clock."""
+def unified_view(data, observe=host_observations, cache_root=None, now=None, openrig_home=None):
+    """One row per account in `environments.ACCOUNTS` order. `observe`, `now`
+    and `openrig_home` are injectable so tests never launch a real native
+    probe, depend on the wall clock, or read the real OpenRig state. With
+    `openrig_home` unset the OpenRig source is simply absent."""
     now = now or datetime.now(timezone.utc)
+    readings = openrig_seat_readings(openrig_home) if openrig_home else []
     rows_by_account = {row['account']: row for row in observe(data)}
     rows = []
     for account in ACCOUNTS:
@@ -167,7 +256,7 @@ def unified_view(data, observe=host_observations, cache_root=None, now=None):
         elif observation['runtime'] == 'codex':
             rows.append(_codex_row(observation))
         else:
-            rows.append(_claude_row(observation, cache_root, now))
+            rows.append(_claude_row(observation, cache_root, now, _seat_readings_for(account, data, readings)))
     return {'observed_at': now.isoformat(), 'accounts': rows}
 
 
@@ -212,7 +301,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         data = accounts.load(args.registry)
-        view = unified_view(data)
+        view = unified_view(data, openrig_home=Path.home() / '.openrig')
         print(json.dumps(view, indent=2) if args.json else table(view))
         return 0
     except (OSError, ValueError) as error:
