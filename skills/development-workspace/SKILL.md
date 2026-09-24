@@ -46,4 +46,8 @@ handover. Follow repository publication rules and the user's authorization.
 
 The fuller adapted pstack workflow and principles live with Iztac. This shared
 entry point deliberately contains no separate copy of them and no OpenClaw-only
-tooling or scheduled morning-brief procedure.
+tooling or scheduled morning-brief procedure. Any session may still use one:
+when a concrete choice turns on an engineering principle, read its one-line index
+in `~/.local/share/dev-platform/current/agents/iztac/skills/iztac-engineering/SKILL.md`
+and then only that principle's file. Reading a rule adopts neither Iztac's
+identity nor his workflow.

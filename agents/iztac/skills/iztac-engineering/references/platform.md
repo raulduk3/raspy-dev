@@ -30,7 +30,7 @@ These change nothing; run them whenever the state matters:
 
 - `rig ps`, `rig ps --include-archived`, `rig ps --nodes --rig <name>`, `rig ps --json` for IDs.
 - `tmux ls`; `herdr workspace list`; `herdr status`.
-- `ai-usage`; `ai-env doctor`; `ai-account status` (from a plain terminal: inside a Claude
+- `ai-usage`; `ai-env doctor` (a `stale` skill folder means its links point into an older release; relink them to `current/skills/<name>`); `ai-account status` (from a plain terminal: inside a Claude
   desktop session every account reads as unverified).
 - `ai-session` and the transcripts themselves: `~/.claude/projects/<cwd-slug>/<id>.jsonl`,
   `~/.codex/sessions/`. A session outlives its seat, its rig and its herdr tile.
@@ -41,7 +41,7 @@ These change nothing; run them whenever the state matters:
 | Goal | Do | Trap |
 | --- | --- | --- |
 | Start a project's standard team | The `ai` menu, or `dev-workspace start iztac --cwd <engagement folder> --rig iztac-<project>` | The menu ties a team to a repository through `engagements/<slug>/project`, which holds `owner/repo` |
-| Start a custom team | Spec and `path:` agents in the engagement folder; `rig spec validate`, `rig agent validate`, `rig up <spec> --plan`, then `rig up <spec>` | No `--cwd`: it overrides every member's `cwd`. The menu's start only knows the standard template, so use the menu for a custom team only once it runs |
+| Give a project its own team | `engagements/<project>/rig.yaml` named `iztac-<project>`, `path:` agents beside it; `rig spec validate`, `rig agent validate`, `rig up <spec> --plan`; then start it from the menu or `dev-workspace start iztac --cwd <engagement folder> --rig iztac-<project>` | The launcher starts that spec with no `--cwd`, since `--cwd` overrides every member's folder, and refuses a spec whose `name` differs from the team's |
 | Rename a team | Stop it, then start fresh under the new name | A rig name is its identity (`pod-member@rig`); nothing renames it, and `rig up --existing` cannot restore a stopped rig |
 | Hide an old team | `rig archive <rig ID>` | Takes the ID from `rig ps --json`, not the name. Reversible with `rig unarchive` |
 | Tidy herdr | `herdr workspace close <id>` | A space or tile is only a view; closing it stops nothing. Open a team from the menu once before using `rig tui` to open agents |
