@@ -75,7 +75,8 @@ class Doctor(unittest.TestCase):
         self.assertEqual(report['commands']['claude']['state'], 'missing')
         self.assertEqual(report['commands']['laya-decide']['state'], 'missing')
         self.assertEqual(report['skills']['.claude/skills']['broken'], ['gone'])
-        self.assertEqual(report['skills']['.claude/skills']['divergent'], ['loop'])
+        self.assertEqual(report['skills']['.claude/skills']['missing'], ['loop'])
+        self.assertEqual(report['skills']['.claude/skills']['canonical_missing'], ['loop'])
         self.assertEqual(report['skills']['.codex/skills']['state'], 'missing')
         self.assertEqual(report['platform_check']['state'], 'ok')
         self.assertEqual(report['laya']['probe']['state'], 'unverified')
@@ -87,12 +88,54 @@ class Doctor(unittest.TestCase):
         skills = self.home / '.claude/skills'
         skills.mkdir(parents=True)
         os.symlink(self.platform / 'skills/loop', skills / 'loop')
+        shared = self.home / '.agents/skills'
+        shared.mkdir(parents=True)
+        os.symlink(self.platform / 'skills/loop', shared / 'loop')
         self.assertEqual(self.run_doctor()['skills']['.claude/skills']['state'], 'ok')
         alternate = self.home / 'alternate'
         self.platform.rename(alternate)
         (skills / 'loop').unlink()
         os.symlink(alternate / 'skills/loop', skills / 'loop')
+        (shared / 'loop').unlink()
+        os.symlink(alternate / 'skills/loop', shared / 'loop')
         self.assertEqual(self.run_doctor('--platform-root', str(alternate))['skills']['.claude/skills']['state'], 'ok')
+
+    def test_shared_published_override_is_healthy_but_client_drift_is_not(self):
+        published = self.home / 'workshop/loop'
+        published.mkdir(parents=True)
+        (published / 'SKILL.md').write_text('# Published loop\n')
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            folder = self.home / rel
+            folder.mkdir(parents=True)
+            os.symlink(published, folder / 'loop')
+        report = self.run_doctor()['skills']
+        self.assertTrue(all(item['state'] == 'ok' for item in report.values()))
+
+        # A valid but stale repository source must not pass merely because it exists.
+        client = self.home / '.codex/skills/loop'
+        client.unlink()
+        os.symlink(self.platform / 'skills/loop', client)
+        drift = self.run_doctor()['skills']
+        self.assertEqual(drift['.codex/skills']['state'], 'broken')
+        self.assertEqual(drift['.codex/skills']['divergent'], ['loop'])
+        self.assertEqual(drift['.claude/skills']['state'], 'ok')
+
+    def test_missing_or_broken_shared_source_never_makes_clients_healthy(self):
+        shared = self.home / '.agents/skills'
+        shared.mkdir(parents=True)
+        for rel in ('.claude/skills', '.codex/skills'):
+            folder = self.home / rel
+            folder.mkdir(parents=True)
+            os.symlink(self.platform / 'skills/loop', folder / 'loop')
+        for broken in (False, True):
+            with self.subTest(broken=broken):
+                if broken:
+                    os.symlink(self.home / 'absent/loop', shared / 'loop')
+                report = self.run_doctor()['skills']
+                self.assertEqual(report['.agents/skills']['state'], 'broken' if broken else 'missing')
+                for rel in ('.claude/skills', '.codex/skills'):
+                    self.assertEqual(report[rel]['state'], 'missing')
+                    self.assertEqual(report[rel]['canonical_missing'], ['loop'])
 
     def test_missing_canonical_skills_report_drift_without_flagging_extra_skills(self):
         skills = self.home / '.agents/skills'
