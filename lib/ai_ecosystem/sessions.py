@@ -124,6 +124,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('scan'); s.add_argument('--limit', type=int, default=500); s.add_argument('--home')
     s.add_argument('--no-openclaw', action='store_true')
+    s.add_argument('--environments-root', type=Path, help='prepared local OpenRig account environments')
     s = sub.add_parser('list'); s.add_argument('--json', action='store_true'); s.add_argument('--runtime')
     s.add_argument('--limit', type=int, default=20, help='maximum results (default 20; 0 means all)')
     s.add_argument('--search', help='case-insensitive title, native ID or cwd substring')
@@ -158,7 +159,7 @@ def main(argv=None):
                 result = conversations.bind(store, a.id, a.native_id, a.expect_revision)
             print(json.dumps(result, indent=2, sort_keys=True))
         elif a.cmd == 'scan':
-            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources()), a.limit), indent=2, sort_keys=True))
+            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources(), a.environments_root), a.limit), indent=2, sort_keys=True))
         elif a.cmd == 'list':
             items = [m for m in store.all() if not a.runtime or m['runtime'] == a.runtime]
             if a.search:

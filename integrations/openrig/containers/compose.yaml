@@ -1,0 +1,181 @@
+{
+  "name": "iztac-account-environments",
+  "services": {
+    "anthropic-apple": {
+      "build": {
+        "context": "."
+      },
+      "image": "dev-platform-account-env:0.5.14",
+      "init": true,
+      "restart": "no",
+      "ports": [
+        "127.0.0.1:17433:7433"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-apple/home",
+          "target": "/home/node"
+        },
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-apple/workspace",
+          "target": "/workspace"
+        }
+      ],
+      "secrets": [
+        {
+          "source": "anthropic-apple-control",
+          "target": "control_token"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
+      "networks": [
+        "anthropic-apple"
+      ]
+    },
+    "anthropic-gmail": {
+      "build": {
+        "context": "."
+      },
+      "image": "dev-platform-account-env:0.5.14",
+      "init": true,
+      "restart": "no",
+      "ports": [
+        "127.0.0.1:17434:7433"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-gmail/home",
+          "target": "/home/node"
+        },
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-gmail/workspace",
+          "target": "/workspace"
+        }
+      ],
+      "secrets": [
+        {
+          "source": "anthropic-gmail-control",
+          "target": "control_token"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
+      "networks": [
+        "anthropic-gmail"
+      ]
+    },
+    "openai-apple": {
+      "build": {
+        "context": "."
+      },
+      "image": "dev-platform-account-env:0.5.14",
+      "init": true,
+      "restart": "no",
+      "ports": [
+        "127.0.0.1:17435:7433"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/openai-apple/home",
+          "target": "/home/node"
+        },
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/openai-apple/workspace",
+          "target": "/workspace"
+        }
+      ],
+      "secrets": [
+        {
+          "source": "openai-apple-control",
+          "target": "control_token"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
+      "networks": [
+        "openai-apple"
+      ]
+    },
+    "openai-gmail": {
+      "build": {
+        "context": "."
+      },
+      "image": "dev-platform-account-env:0.5.14",
+      "init": true,
+      "restart": "no",
+      "ports": [
+        "127.0.0.1:17436:7433"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/openai-gmail/home",
+          "target": "/home/node"
+        },
+        {
+          "type": "bind",
+          "source": "${AI_ENV_ROOT:?Run prepare.py first}/openai-gmail/workspace",
+          "target": "/workspace"
+        }
+      ],
+      "secrets": [
+        {
+          "source": "openai-gmail-control",
+          "target": "control_token"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
+      "networks": [
+        "openai-gmail"
+      ]
+    }
+  },
+  "secrets": {
+    "anthropic-apple-control": {
+      "file": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-apple/secrets/control-token"
+    },
+    "anthropic-gmail-control": {
+      "file": "${AI_ENV_ROOT:?Run prepare.py first}/anthropic-gmail/secrets/control-token"
+    },
+    "openai-apple-control": {
+      "file": "${AI_ENV_ROOT:?Run prepare.py first}/openai-apple/secrets/control-token"
+    },
+    "openai-gmail-control": {
+      "file": "${AI_ENV_ROOT:?Run prepare.py first}/openai-gmail/secrets/control-token"
+    }
+  },
+  "networks": {
+    "anthropic-apple": {},
+    "anthropic-gmail": {},
+    "openai-apple": {},
+    "openai-gmail": {}
+  }
+}

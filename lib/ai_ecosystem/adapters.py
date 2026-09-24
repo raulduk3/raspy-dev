@@ -87,7 +87,7 @@ def _claude_header(path):
     return found
 
 
-def read_claude(claude_home):
+def read_claude(claude_home, map_path=None):
     if not (claude_home / 'projects').is_dir():
         raise FileNotFoundError('native store unavailable')
     seen = set()
@@ -102,6 +102,8 @@ def read_claude(claude_home):
                         path = index.parent / path
                 else:
                     path = index.parent / f"{e['sessionId']}.jsonl"
+                if map_path is not None and isinstance(e.get('fullPath'), str) and Path(e['fullPath']).is_absolute():
+                    path = map_path(path)
                 yield _rec(e['sessionId'], e.get('projectPath'), e.get('customTitle'), e.get('gitBranch'),
                            e.get('modified'), extra={'sidechain': bool(e.get('isSidechain')),
                            'index_path': str(index), 'transcript_path': str(path),
@@ -169,7 +171,7 @@ def read_vscode(root):
             yield _rec(native, folder, title, None, d.get('lastMessageDate') or d.get('creationDate'))
 
 
-def discover(home=None, openclaw=True, previous=None):
+def discover(home=None, openclaw=True, previous=None, environments_root=None):
     home = Path(home or Path.home())
     sources = []
     for path, owner, store in codex_homes(home):
@@ -215,6 +217,9 @@ def discover(home=None, openclaw=True, previous=None):
     for root in vscode_roots(home):
         if root.is_dir():
             sources.append(Source(f'vscode:{root}', 'copilot', str(root), 'vscode', lambda r=root: read_vscode(r)))
+    if environments_root is not None:
+        from .environments import sources as environment_sources
+        sources.extend(environment_sources(Path(environments_root)))
     # A vanished previously indexed store is unavailable, not an empty successful scan.
     keys = {s.key for s in sources}
     for key, old in (previous or {}).items():

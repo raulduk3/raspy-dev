@@ -141,3 +141,10 @@ Existing project names resolve to stable IDs through `~/.config/dev-platform/rep
 Each conversation has `conversations/ID/session.json`, `handoff.md`, and a reserved `native/pi/` folder. Native associations stay in existing index manifests and survive scans. Binding checks the expected native-record revision and refuses reassignment to another conversation. Project/formation bindings require a matching observed native workspace. This keeps associations evidence-based but means unavailable historical workspaces need a separate migration/rebinding procedure.
 
 These commands establish storage and association, not complete runtime lifecycle enforcement. The role launcher must still apply neutral/project cwd, resource isolation, native Pi session paths and account ownership. Formation-to-project promotion, explicit worker/successor relationships, relocated source identities and OpenRig execution bindings remain pending. A created conversation does not prove any of those behaviors.
+
+
+### Container account histories
+
+Pass `scan --environments-root ROOT` for the prepared four-account local OpenRig deployment. This scans native homes under `ROOT/ACCOUNT/home`, without reading credentials. It translates `/workspace` to that account's host workspace and `/home/node` to its persistent home. The original container cwd and Codex rollout locator remain in native metadata. An account-profile label is not verified login identity.
+
+Container records are OpenRig-owned and cannot resume through the standalone host CLI. Missing native stores remain unavailable; they are not deleted. Conversation associations and authored handoffs survive the same scan behavior as other native records. General source relocation, cross-container project identity, and exact host/seat/occupant adoption still require explicit integration evidence.
