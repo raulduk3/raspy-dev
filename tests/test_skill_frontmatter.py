@@ -14,7 +14,8 @@ from test_stability import PLATFORM
 def tracked_skills():
     out = subprocess.run(['git', 'ls-files', '*SKILL.md'], cwd=PLATFORM, check=True,
                          text=True, stdout=subprocess.PIPE).stdout
-    return [PLATFORM / line for line in out.splitlines() if line]
+    # vendor/ holds upstream copies as published; bin/pstack-port builds the installed skills from them.
+    return [PLATFORM / line for line in out.splitlines() if line and not line.startswith('vendor/')]
 
 
 class SkillFrontmatterTests(unittest.TestCase):
