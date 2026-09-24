@@ -78,6 +78,26 @@ WORKER_MODEL="${LOOP_WORKER_MODEL:-sonnet}"
 today="$(TZ=America/Chicago date +%Y-%m-%d)"
 ctl="$state/${repo//\//__}"; mkdir -p "$ctl"
 GHX="$here/ghx"
+ACCOUNT_CLI="$here/../../../bin/ai-account"
+
+verify_loop_account() {
+  local result
+  if [ -z "${LOOP_ACCOUNT_ID:-}" ]; then
+    # Capture separately: a pipeline without pipefail masks a failed registry read.
+    # An unreadable selection must never fall through to an unbound legacy launch.
+    result="$("$ACCOUNT_CLI" selected)" || return 2
+    LOOP_ACCOUNT_ID="$(jq -r '.selected // empty' <<<"$result")" || return 2
+  fi
+  [ -n "${LOOP_ACCOUNT_ID:-}" ] || return 0
+  case "$LOOP_ACCOUNT_ID" in
+    anthropic-gmail|anthropic-apple) ;;
+    *) echo "loop: account selection requires a Claude subscription; this loop has no Codex or z.ai worker adapter" >&2; return 2 ;;
+  esac
+  result="$(cd "$(repo_dir)" && "$ACCOUNT_CLI" status "$LOOP_ACCOUNT_ID")" || return 2
+  jq -e '.identity == "verified" and .runtime == "claude"' >/dev/null <<<"$result" || {
+    echo "loop: selected account is not verified; no worker allocated or steer changed" >&2; return 2;
+  }
+}
 
 repo_dir() {
   local d; d="$(awk -v r="$repo" '$1==r {print $2}' "$CONF" 2>/dev/null | head -1)"
@@ -248,6 +268,14 @@ EOF
 launch_worker() {  # issue worktree model branch title: start a new native conversation
   local i="$1" wt="$2" model="$3" branch="$4" title="$5"
   local envf common v session_title description
+  local selected_account="${LOOP_ACCOUNT_ID:-}"
+  local -a worker_command
+  worker_command=(claude)
+  if [ -n "$selected_account" ]; then
+    worker_command=("$ACCOUNT_CLI" run --account "$selected_account" --)
+    jq -cn --arg id "$selected_account" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{account_id:$id, runtime:"claude", attempted_at:$at, scope:"new worker attempt"}' >> "$out/workers/$i.account.jsonl"
+  fi
   # Display metadata only: no native ID changes or historical session edits.
   description="$(jq -nr --arg title "$title" '$title | gsub("[[:space:][:cntrl:]]+"; " ") | sub("^ +"; "") | sub("[ .]+$"; "") | .[0:60]')"
   [ -n "$description" ] || description="Implement issue"
@@ -268,7 +296,7 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
     # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
     python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
       "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
-      claude --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+      "${worker_command[@]}" --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
@@ -356,6 +384,7 @@ case "$verb" in
     ;;
   go)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     printf 'go%s\n' "${*:+ $*}" > "$ctl/steer"
     sense >/dev/null
     sel="$(select_from_plan "$@")"
@@ -368,6 +397,7 @@ case "$verb" in
     ;;
   resume)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     [ $# -gt 0 ] || { echo "loop: resume needs issue numbers" >&2; exit 2; }
     dir="$(repo_dir)"
     for i in "$@"; do
@@ -401,6 +431,7 @@ PY
   tick)
     [ "$(steer_word)" = go ] || { echo NO_REPLY; exit 0; }
     [ -n "$day" ] || { echo NO_REPLY; exit 0; }
+    verify_loop_account
     running="$(running_workers | wc -l | tr -d ' ')"
     cap=$((CAP - running)); [ "$cap" -gt 0 ] || { echo NO_REPLY; exit 0; }
     sense >/dev/null

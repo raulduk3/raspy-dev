@@ -430,7 +430,7 @@ class WorkerBoundTests(Fixture):
         self.fail(f'timed out waiting for {path}')
 
     def detached_supervisor(self, timed_out, title='Fix "quoted" $(touch leaked)\n parser.',
-                            expected_name='fix(repo): Fix "quoted" $(touch leaked) parser #1'):
+                            expected_name='fix(repo): Fix "quoted" $(touch leaked) parser #1', account=False):
         self.setup_remote()
         self.loop('start')
         day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
@@ -445,10 +445,13 @@ class WorkerBoundTests(Fixture):
         claude.write_text('''#!/usr/bin/env python3
 import json, os, sys, time
 from pathlib import Path
+if sys.argv[1:]==['auth','status','--json']:
+ print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty','email':'fixture@example.invalid','subscriptionType':'max'}))
+ sys.exit(0)
 assert sys.stdin.read() == ''
 assert 'DO_NOT_INHERIT' not in os.environ
 assert os.environ['SAFE_FIXTURE'] == 'yes'
-Path('child.started').write_text(json.dumps({'pid': os.getpid(), 'parent': os.getppid(), 'argv': sys.argv[1:]}))
+Path('child.started').write_text(json.dumps({'pid': os.getpid(), 'parent': os.getppid(), 'argv': sys.argv[1:], 'native_home':os.getenv('CLAUDE_CONFIG_DIR')}))
 print('fixture stdout', flush=True)
 print('fixture stderr', file=sys.stderr, flush=True)
 while not Path('child.release').exists(): time.sleep(0.02)
@@ -456,6 +459,15 @@ sys.exit(7)
 ''')
         env = dict(self.env, LOOP_WORKER_MAX_SECONDS='3' if timed_out else '10',
                    DO_NOT_INHERIT='fixture', SAFE_FIXTURE='yes', DEV_PLATFORM_ENV_PASS='SAFE_FIXTURE')
+        if account:
+            native_home = self.home / 'native-profile'
+            native_home.mkdir()
+            registry = self.home / '.config/dev-platform/accounts.json'
+            registry.parent.mkdir(parents=True)
+            registry.write_text(json.dumps({'version':1,'selected':'anthropic-apple' if account == 'default' else None,'bindings':{'anthropic-apple':{
+                'home':str(native_home),'expected_email':'fixture@example.invalid'}}}))
+            if account != 'default':
+                env['LOOP_ACCOUNT_ID'] = 'anthropic-apple'
         ready = self.base / 'launcher.ready'
         # Keep a short-lived outer shell in its own group, then emulate tool cleanup.
         launcher = subprocess.Popen(
@@ -464,6 +476,7 @@ sys.exit(7)
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         supervisor = child = None
+        worker_finished = False
         try:
             self.wait_for_file(ready)
             self.wait_for_file(wt / 'child.started')
@@ -473,6 +486,10 @@ sys.exit(7)
             self.assertEqual(argv.count('--name'), 1)
             self.assertEqual(argv[argv.index('--name') + 1], expected_name)
             self.assertNotIn('--resume', argv, 'loop resume starts a new attempt, not a native resume')
+            if account:
+                self.assertEqual(metadata['native_home'], str(native_home.resolve()))
+                receipt = json.loads((workers / '1.account.jsonl').read_text())
+                self.assertEqual(receipt['account_id'], 'anthropic-apple')
             self.assertFalse((wt / 'leaked').exists(), 'issue titles must remain literal arguments')
             supervisor = int((workers / '1.pid').read_text())
             self.assertEqual(supervisor, metadata['parent'], 'PID must name the actual supervisor')
@@ -486,6 +503,7 @@ sys.exit(7)
             if not timed_out:
                 (wt / 'child.release').touch()
             self.wait_for_file(workers / '1.exit')
+            worker_finished = True
             result = json.loads((workers / '1.exit').read_text())
             self.assertEqual(result['exit_code'], 124 if timed_out else 7)
             self.assertEqual(result['reason'], 'wall_time_limit' if timed_out else 'exited')
@@ -498,7 +516,12 @@ sys.exit(7)
                 os.kill(child, 0)
         finally:
             # Only fixture process groups. Never touch real loop state or workers.
-            for pid in (launcher.pid, supervisor, child):
+            # A completed fixture's numeric PID may already be gone or reused.
+            # Do not signal stale groups after the supervisor recorded completion.
+            remaining = [] if worker_finished else [supervisor, child]
+            if launcher.poll() is None:
+                remaining.append(launcher.pid)
+            for pid in remaining:
                 if pid is not None:
                     try:
                         os.killpg(pid, signal.SIGKILL)
@@ -517,6 +540,38 @@ sys.exit(7)
 
     def test_worker_display_name_handles_missing_title(self):
         self.detached_supervisor(False, None, 'fix(repo): Implement issue #1')
+
+    def test_explicit_account_pins_new_worker_attempt_without_changing_supervisor(self):
+        self.detached_supervisor(False, account=True)
+
+    def test_shared_selection_pins_future_loop_workers(self):
+        self.detached_supervisor(False, account='default')
+
+    def test_account_preflight_fails_before_steer_change_or_worker_allocation(self):
+        self.setup_remote()
+        self.loop('start')
+        before = (self.ctl() / 'steer').read_text()
+        for account in ('openai-gmail', 'zai', 'anthropic-apple'):
+            self.loop('go', env=dict(self.env, LOOP_ACCOUNT_ID=account), expected=2)
+            self.assertEqual((self.ctl() / 'steer').read_text(), before)
+            self.assertEqual(list(self.repo.glob('.claude/worktrees/loop-*')), [])
+        registry = self.home / '.config/dev-platform/accounts.json'
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        registry.write_text(json.dumps({'version':1,'selected':'openai-gmail','bindings':{}}))
+        self.loop('go', expected=2)
+        self.assertEqual((self.ctl() / 'steer').read_text(), before)
+
+    def test_unreadable_account_registry_never_falls_back_to_legacy_dispatch(self):
+        self.setup_remote()
+        self.loop('start')
+        before = (self.ctl() / 'steer').read_bytes()
+        registry = self.home / '.config/dev-platform/accounts.json'
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        for contents in ('not json', '{"version":2,"bindings":{}}'):
+            registry.write_text(contents)
+            self.loop('go', expected=2)
+            self.assertEqual((self.ctl() / 'steer').read_bytes(), before)
+            self.assertEqual(list(self.repo.glob('.claude/worktrees/loop-*')), [])
 
     def test_supervisor_sanitizes_environment_and_reports_exit(self):
         result = self.base / 'worker.exit'

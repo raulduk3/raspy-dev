@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import select
 import subprocess
 import sys
@@ -16,7 +17,8 @@ import tempfile
 import time
 
 IDS = ('anthropic-gmail', 'anthropic-apple', 'openai-gmail', 'openai-apple', 'zai')
-CONFLICTS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN',
+CONFLICTS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN',
+             'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_FEDERATION_RULE_ID', 'CLAUDE_CODE_OAUTH_TOKEN',
              'CLAUDE_CODE_API_KEY_HELPER_TTL_MS', 'CLAUDE_CODE_SESSION_ACCESS_TOKEN')
 
 
@@ -142,7 +144,7 @@ def quota_fields(result):
     if not isinstance(limits, dict):
         limits = {'codex': result.get('rateLimits')}
     clean = []
-    for value in limits.values():
+    for index, (limit_id, value) in enumerate(limits.items(), 1):
         if not isinstance(value, dict):
             continue
         windows = {}
@@ -152,6 +154,9 @@ def quota_fields(result):
                 windows[key] = {k: window[k] for k in ('usedPercent', 'windowDurationMins', 'resetsAt')
                                 if isinstance(window.get(k), (int, float)) and not isinstance(window[k], bool)}
         if windows:
+            windows['limit_id'] = (limit_id if isinstance(limit_id, str) and
+                                   re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}', limit_id)
+                                   else f'pool-{index}')
             clean.append(windows)
     return clean or None
 
@@ -167,7 +172,8 @@ def probe(account, home, usage=False, native_default=False):
         response = subprocess.run(['claude', 'auth', 'status', '--json'], env=env,
                                   capture_output=True, text=True, timeout=15)
         data = json.loads(response.stdout)
-        if response.returncode or not data.get('loggedIn') or data.get('authMethod') != 'claude.ai':
+        if (response.returncode or not data.get('loggedIn') or data.get('authMethod') != 'claude.ai'
+                or data.get('apiProvider') != 'firstParty'):
             raise ValueError('Claude subscription authentication unavailable')
         return {'email': data.get('email'), 'plan': data.get('subscriptionType'), 'quota': None,
                 'quota_reason': 'Claude auth status does not expose quota; use native /usage'}
@@ -215,7 +221,7 @@ def plan(data, account):
     return {'id': account, 'runtime': runtime(account), 'native_home': str(home_for(data, account)),
             'environment_key': 'CODEX_HOME' if runtime(account) == 'codex' else 'CLAUDE_CONFIG_DIR',
             'native_default': data['bindings'].get(account, {}).get('native_default', False),
-            'scope': 'new launches through ai-account run only; existing sessions unchanged',
+            'scope': 'new ai-account launches and compatible future loop workers; existing sessions unchanged',
             'conflicting_environment_names': conflicts(os.environ),
             'openclaw': 'separate native personal account selection required; existing sessions stay pinned',
             'openrig': 'direct seat rebinding unavailable in 0.5.14; use an explicitly configured new launch',
@@ -224,21 +230,27 @@ def plan(data, account):
 
 def table(output):
     rows = output.get('accounts', [output])
-    lines = ['ACCOUNT             LOGIN       PLAN       USED / RESET (UTC)', '-' * 82]
+    lines = ['  ACCOUNT             LOGIN       PLAN       USED / WINDOW / RESET (UTC)', '-' * 92]
     for row in rows:
-        windows = [window for limit in row.get('quota') or [] for window in limit.values()]
+        windows = [(limit.get('limit_id', 'unknown pool'), name, limit[name])
+                   for limit in row.get('quota') or [] for name in ('primary', 'secondary')
+                   if name in limit]
         values = []
-        for window in windows:
+        for limit_id, name, window in windows:
             reset = window.get('resetsAt')
             try:
                 at = datetime.fromtimestamp(reset, timezone.utc).strftime('%m-%d %H:%M') if reset else 'unknown reset'
             except (ValueError, OverflowError, OSError):
                 at = 'unknown reset'
-            values.append(f"{window.get('usedPercent', '?')}% / {at}")
+            duration = window.get('windowDurationMins')
+            label = 'week' if duration == 10080 else (f'{duration}m' if duration else 'unknown window')
+            values.append(f"{limit_id}/{name}: {window.get('usedPercent', '?')}% / {label} / {at}")
         plan_name = row.get('plan') or 'unknown'
-        lines.append(f"{row['id']:<19} {row['identity']:<11} {plan_name:<10} {'; '.join(values) or 'unknown'}")
+        marker = '*' if row.get('selected') else ' '
+        lines.append(f"{marker} {row['id']:<19} {row['identity']:<11} {plan_name:<10} {'; '.join(values) or 'unknown'}")
     lines.append('Observed: ' + output.get('observed_at', 'unknown'))
     lines.append('Billing/renewal: unknown. Quota is not spend; unknown is not zero.')
+    lines.append('* Selected for new CLI and compatible loop launches; existing sessions unchanged.')
     return '\n'.join(lines)
 
 
@@ -252,6 +264,7 @@ def main(argv=None):
         if name == 'status':
             p.add_argument('--table', action='store_true')
     commands.add_parser('monitor').add_argument('--table', action='store_true')
+    commands.add_parser('selected')
     p = commands.add_parser('bind')
     p.add_argument('account', choices=IDS)
     p.add_argument('--home', required=True, type=Path)
@@ -269,7 +282,9 @@ def main(argv=None):
             lock = locks.enter_context(os.fdopen(descriptor, 'w'))
             fcntl.flock(lock, fcntl.LOCK_EX)
         data = load(args.registry)
-        if args.command == 'monitor':
+        if args.command == 'selected':
+            output = {'selected': data.get('selected')}
+        elif args.command == 'monitor':
             output = {'observed_at': now(), 'accounts': [status(data, a, True) for a in IDS],
                       'notice': 'read-only one-shot snapshot, not spend or renewal data; unknown is not zero'}
         elif args.command == 'bind':

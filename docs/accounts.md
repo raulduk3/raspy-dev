@@ -34,7 +34,9 @@ workers, or run a daemon. No default account is inferred and no fallback is auto
    contains home paths and expected identities, never credentials.
 5. `ai-account plan anthropic-gmail` reports the scope and environment conflicts.
    `ai-account select anthropic-gmail` verifies identity and saves the default for
-   subsequent `ai-account run` launches. Existing sessions do not change.
+   subsequent `ai-account run` launches and compatible future development-loop
+   workers. `ai-account selected` reads that same default without probing or changing
+   anything. Existing sessions do not change.
 6. `ai-account run -- --name 'fix(parser): Handle empty input'` starts Claude using
    the selected native home. A Codex selection starts Codex with the same literal
    argument forwarding; supply that harness's arguments. `run --account ID -- ...`
@@ -57,11 +59,32 @@ responsible for those boundaries. New profile homes need their own native setup.
 
 ## Monitor and limitations
 
+### Existing development-loop workers
+
+The loop resolves the same `ai-account select` default for future worker attempts,
+including the loop's `resume` (which starts a new conversation). An explicitly
+requested `LOOP_ACCOUNT_ID=anthropic-gmail` or `anthropic-apple` overrides that default
+for one invocation. `go` verifies the native identity before changing steer or creating
+a worktree. Dispatch still uses the existing supervisor, limits, guard and ledger;
+the account selector only wraps the native launch. Each attempted launch appends
+its stable account ID to `workers/<issue>.account.jsonl`. This is launch intent,
+not proof the worker completed; inspect its exit/log evidence as usual.
+Unreadable or malformed selection state stops dispatch; it never falls back to an
+unbound launch.
+
+No selected default and no override means unchanged legacy behavior, not a guessed
+account. The selected default applies only to future attempts. OpenAI/z.ai selections
+fail clearly because this loop currently has only a Claude worker adapter. Existing
+workers remain untouched. Do not set this variable globally unless that default is
+explicitly intended; prefer the owner-directed loop invocation.
+
 `status ID` and `monitor` are timestamped, one-shot native observations. Claude uses
 `claude auth status --json`; it cannot establish remaining allowance, so quota stays
 unknown and the user can inspect native `/usage`. Codex uses a short-lived stdio
 app-server, `account/read` with `refreshToken:false`, and `account/rateLimits/read`.
-No model thread/turn is created. Quota windows are whitelisted; raw auth responses,
+No model thread/turn is created. Quota fields are whitelisted.
+Independent quota pools retain bounded native pool IDs and primary/secondary window
+labels; they are not added together into an invented total. Raw auth responses,
 native stderr and credential contents are never relayed. The native client can write
 its ordinary diagnostics and refresh according to its own implementation; this tool
 never reads or rewrites credential files. Receipt totals and quota percentages are
@@ -69,7 +92,7 @@ not actual spend, renewal status or the number of subscriptions actively billing
 
 | Surface | What changes |
 | --- | --- |
-| Claude Code / Codex through `ai-account run` | New process gets its bound native home; current processes unchanged |
+| Claude Code / Codex through `ai-account run`, compatible loop workers | New process gets its bound native home; current processes unchanged |
 | Existing CLI launches bypassing this selector | Unchanged; cannot claim ecosystem-wide propagation |
 | OpenClaw | Native personal-account default is separate; `models accounts use` affects new sessions only and requires signed-in-person access. Connected accounts supports OpenAI API/ChatGPT but Anthropic API keys, not Claude subscription tokens |
 | OpenRig 0.5.14 | Both Claude and Codex seats exist; provider-switch execution is not wired. Its strict member schema lacks per-seat environment fields and CODEX_HOME is daemon-wide, so safe per-seat profile injection is not claimed |

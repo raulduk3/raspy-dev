@@ -26,7 +26,7 @@ class Accounts(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         ACCOUNT_TEST_LOG=str(self.log), TEST_EMAIL='owner@example.invalid')
         for key in list(self.env):
-            if key.startswith(('ANTHROPIC_', 'CLAUDE_CODE_')) or key in ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY'):
+            if key.startswith(('ANTHROPIC_', 'CLAUDE_CODE_')) or key in ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_FEDERATION_RULE_ID'):
                 del self.env[key]
         for runtime in ('claude', 'codex'):
             tool = self.bin / runtime
@@ -44,10 +44,12 @@ if 'app-server' in sys.argv:
    result={'account':{'type':'chatgpt','email':os.environ['TEST_EMAIL'],'planType':'pro','secret':'NEVER_SHOW'}}
   elif method=='account/rateLimits/read':
    result={'rateLimits':{'primary':{'usedPercent':25,'windowDurationMins':300,'resetsAt':123,'secret':'NEVER_SHOW'}}}
+   if os.getenv('TEST_MULTI_POOLS'):
+    result={'rateLimitsByLimitId':{'codex':result['rateLimits'],'review':{'primary':{'usedPercent':3,'windowDurationMins':10080,'resetsAt':456}},'bad\\nlabel':{'secondary':{'usedPercent':7}}}}
   else: result={}
   print(json.dumps({'id':r['id'],'result':result}),flush=True)
 elif sys.argv[1:]==['auth','status','--json']:
- print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','email':os.environ['TEST_EMAIL'],'subscriptionType':'max','secret':'NEVER_SHOW'}))
+ print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','apiProvider':os.getenv('TEST_PROVIDER','firstParty'),'email':os.environ['TEST_EMAIL'],'subscriptionType':'max','secret':'NEVER_SHOW'}))
 else:
  print('launched')
 ''')
@@ -80,7 +82,16 @@ else:
         self.bind('openai-gmail')
         output = self.cli('status', 'openai-gmail', '--table').stdout
         self.assertIn('25%', output)
+        self.assertIn('300m', output)
         self.assertIn('verified', output)
+        self.cli('select', 'openai-gmail')
+        self.assertIn('* openai-gmail', self.cli('monitor', '--table').stdout)
+
+    def test_cached_claude_identity_cannot_verify_alternate_provider(self):
+        self.env['TEST_PROVIDER'] = 'thirdParty'
+        self.assertNotEqual(self.cli('bind', 'anthropic-gmail', '--home', self.native,
+                                   '--expected-email', 'owner@example.invalid', ok=False).returncode, 0)
+        self.assertFalse(self.registry.exists())
 
     def test_real_exec_preserves_literal_arguments_and_home_boundary(self):
         sentinel = self.native / 'auth.json'
@@ -137,10 +148,31 @@ else:
         self.bind('openai-gmail')
         data = json.loads(self.cli('status', 'openai-gmail').stdout)
         self.assertEqual(data['identity'], 'verified')
-        self.assertEqual(data['quota'], [{'primary': {'usedPercent': 25, 'windowDurationMins': 300, 'resetsAt': 123}}])
+        self.assertEqual(data['quota'], [{'limit_id': 'codex', 'primary': {'usedPercent': 25, 'windowDurationMins': 300, 'resetsAt': 123}}])
         calls = [json.loads(s) for s in self.log.read_text().splitlines()]
         self.assertTrue(all(c['argv'][1:] == ['app-server'] for c in calls))
         self.assertTrue(all(c['codex'] == str(self.native) and c['claude'] is None for c in calls))
+
+    def test_inherited_codex_tokens_and_workload_identity_cannot_override_profile(self):
+        self.bind('openai-gmail')
+        before = self.log.read_bytes()
+        for key in ('CODEX_ACCESS_TOKEN', 'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_FEDERATION_RULE_ID'):
+            self.env[key] = 'NEVER_SHOW'
+            result = self.cli('run', '--account', 'openai-gmail', '--', 'exec', 'hello', ok=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.log.read_bytes(), before, 'no native probe or turn may start')
+            del self.env[key]
+
+    def test_monitor_keeps_independent_quota_pool_and_window_labels(self):
+        self.bind('openai-gmail')
+        self.env['TEST_MULTI_POOLS'] = '1'
+        data = json.loads(self.cli('status', 'openai-gmail').stdout)
+        self.assertEqual([item['limit_id'] for item in data['quota']], ['codex', 'review', 'pool-3'])
+        output = self.cli('status', 'openai-gmail', '--table').stdout
+        self.assertIn('codex/primary: 25% / 300m', output)
+        self.assertIn('review/primary: 3% / week', output)
+        self.assertIn('pool-3/secondary: 7% / unknown window', output)
+        self.assertNotIn('bad', output)
 
     def test_login_plan_does_not_launch_or_create_native_home(self):
         data = json.loads(self.cli('login-plan', 'anthropic-apple').stdout)
