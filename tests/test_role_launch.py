@@ -94,10 +94,19 @@ class RoleLaunch(unittest.TestCase):
         shutil.rmtree(self.agents / 'iztac')
         fallback = self.plan(agents_root=self.root / 'no-agents')[0]['launch']['identityFile']
         self.assertEqual(fallback, str(ROOT / 'agents/iztac/identity.md'))
+        # Every role now ships a contract, so a personal conversation plans too.
         morty = conversations.create(self.store, 'morty', 'Personal fixture')
-        with self.assertRaisesRegex(ValueError, 'no identity file for morty'):
-            role_launch.plan(morty['id'], state_root=self.state, registry=self.registry, account='openai-apple',
-                             profiles_root=self.profiles, agents_root=self.agents)
+        personal, _ = role_launch.plan(morty['id'], state_root=self.state, registry=self.registry,
+                                       account='openai-apple', profiles_root=self.profiles,
+                                       agents_root=self.agents)
+        self.assertEqual(personal['launch']['identityFile'], str(ROOT / 'agents/morty/identity.md'))
+        self.assertEqual(personal['scope'], {'kind': 'personal'})
+        # A role with no contract anywhere still refuses rather than launching blind.
+        with mock.patch.object(role_launch, 'PLATFORM', self.root / 'no-platform'):
+            with self.assertRaisesRegex(ValueError, 'no identity file for morty'):
+                role_launch.plan(morty['id'], state_root=self.state, registry=self.registry,
+                                 account='openai-apple', profiles_root=self.profiles,
+                                 agents_root=self.root / 'no-agents')
 
     def test_resume_only_from_this_conversation_and_clean_environment(self):
         self.configure_profile()
