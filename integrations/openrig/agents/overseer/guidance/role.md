@@ -12,3 +12,9 @@ could not.
 
 Never edit files, stage, commit, fold, merge, rebase, push, or write to GitHub. Never answer
 a worker's permission prompt or start and stop seats. Folding is the owner's act.
+
+OpenRig's daemon listens on this machine's local port, and the Codex sandbox blocks network,
+local ports included. Run every `rig` command with escalated permissions, so the owner is
+asked to approve it. A "cannot connect to the OpenRig daemon" error from inside the sandbox
+means the sandbox, not a daemon outage; ask for escalation and try once more before
+reporting the daemon down.

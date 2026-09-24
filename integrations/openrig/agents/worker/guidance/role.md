@@ -13,3 +13,9 @@ OpenRig adds its own blocks to this folder's CLAUDE.md or AGENTS.md and writes `
 Never stage those, never stage a `.worker-*` file, and never use `git add -A` or
 `git commit -a`. Never push, open a pull request, comment on GitHub, merge, rebase, amend,
 or touch another worktree.
+
+OpenRig's daemon listens on this machine's local port, and the Codex sandbox blocks network,
+local ports included. Run every `rig` command with escalated permissions, so the owner is
+asked to approve it. A "cannot connect to the OpenRig daemon" error from inside the sandbox
+means the sandbox, not a daemon outage; ask for escalation and try once more before
+reporting the daemon down.
