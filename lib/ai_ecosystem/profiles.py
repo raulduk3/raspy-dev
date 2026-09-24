@@ -61,7 +61,19 @@ from . import accounts as accounts_module
 
 PLATFORM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REGISTRY = Path.home() / '.config/dev-platform/accounts.json'
-DEFAULT_INSTALL_ROOT = '$HOME/Dev/dev-platform'
+# The installed platform is the activated release, which is what ~/.local/bin links
+# into. A working checkout is not an install: it moves, it can sit mid-edit, and it
+# may be on any branch. Fall back to the checkout only when no release is activated.
+ACTIVATED_RELEASE = '$HOME/.local/share/dev-platform/current'
+CHECKOUT = '$HOME/Dev/dev-platform'
+
+
+def default_install_root():
+    activated = Path(os.path.expandvars(ACTIVATED_RELEASE)).expanduser()
+    return ACTIVATED_RELEASE if activated.is_dir() else CHECKOUT
+
+
+DEFAULT_INSTALL_ROOT = default_install_root()
 
 MANAGED_BEGIN = '<!-- dev-platform:managed:begin -->'
 MANAGED_END = '<!-- dev-platform:managed:end -->'

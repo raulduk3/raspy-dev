@@ -143,6 +143,18 @@ class BareClaudeHome(ProfilesBase):
         accounts.configuration_check('anthropic-apple', home, self.root)
 
 
+class InstallRoot(ProfilesBase):
+    def test_the_install_root_is_the_activated_release_when_one_exists(self):
+        # ~/.local/bin links into the activated release, so that is the installed
+        # platform. A working checkout moves and may sit mid-edit; it is the fallback.
+        release = self.root / 'release'
+        with mock.patch.object(profiles, 'ACTIVATED_RELEASE', str(release)), \
+             mock.patch.object(profiles, 'CHECKOUT', str(self.root / 'checkout')):
+            self.assertEqual(profiles.default_install_root(), str(self.root / 'checkout'))
+            release.mkdir()
+            self.assertEqual(profiles.default_install_root(), str(release))
+
+
 class StatusLineWithoutCollector(ProfilesBase):
     def test_no_status_line_is_written_when_the_collector_is_not_installed(self):
         home = self.claude_home()
