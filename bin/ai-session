@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Local session index for Claude Code, Codex, OpenClaw and VS Code. See docs/session-index.md."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
+from ai_ecosystem.sessions import main  # noqa: E402
+
+sys.exit(main())

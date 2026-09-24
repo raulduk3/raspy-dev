@@ -1,0 +1,176 @@
+"""ai-session against temp native stores: real subprocesses, SQLite and files, no network."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import unittest
+
+PLATFORM = Path(__file__).resolve().parents[1]
+CLI = PLATFORM / 'bin/ai-session'
+sys.path.insert(0, str(PLATFORM / 'lib'))
+from ai_ecosystem import sessions, store  # noqa: E402
+
+UUID = '0b6f1c2e-1111-4222-8333-444455556666'
+
+
+def tree_digest(root):
+    h = hashlib.sha256()
+    for p in sorted(Path(root).rglob('*')):
+        if p.is_file():
+            h.update(str(p).encode() + p.read_bytes())
+    return h.hexdigest()
+
+
+class SessionIndex(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix='ai-session-')
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        self.home = self.base / 'home'
+        self.state = self.base / 'state'
+        self.work = self.base / 'work'
+        self.work.mkdir()
+        self.env = {'PATH': '/usr/bin:/bin', 'HOME': str(self.home)}
+        self.codex_db(self.home / '.codex', [(UUID, str(self.work), 'fix login', 'main')])
+        self.codex_db(self.home / '.openclaw/agents/main/agent/codex-home', [(UUID, str(self.work), 'owned', 'main')])
+        project = self.home / '.claude/projects/-work'
+        project.mkdir(parents=True)
+        self.claude_line(project, 'aaaaaaaa-0000-4000-8000-000000000001', str(self.work))
+        ws = self.home / '.config/Code/User/workspaceStorage/abc'
+        (ws / 'chatSessions').mkdir(parents=True)
+        (ws / 'workspace.json').write_text(json.dumps({'folder': 'file:///work'}))
+        (ws / 'chatSessions/s1.json').write_text(json.dumps({'sessionId': 's1', 'requests': [{'message': 'SECRET BODY'}]}))
+        (ws / 'chatSessions/s2.json').write_text('[1, 2]')
+
+    def codex_db(self, home, rows):
+        home.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(home / 'state_5.sqlite')
+        conn.execute('CREATE TABLE IF NOT EXISTS threads (id TEXT, rollout_path TEXT, cwd TEXT, title TEXT, git_branch TEXT, archived INT, updated_at INT, body TEXT)')
+        conn.executemany('INSERT INTO threads VALUES (?, "r", ?, ?, ?, 0, 1, "PRIVATE")', rows)
+        conn.commit()
+        conn.close()
+
+    def claude_line(self, project, sid, cwd):
+        lines = [{'type': 'user', 'sessionId': sid, 'cwd': cwd, 'gitBranch': 'dev', 'timestamp': 't',
+                  'message': {'content': 'SECRET BODY'}}]
+        (project / f'{sid}.jsonl').write_text('\n'.join(json.dumps(x) for x in lines) + '\n')
+
+    def run_cli(self, *args, stdin=None, check=True):
+        run = subprocess.run([sys.executable, str(CLI), '--state-root', str(self.state), *args],
+                             capture_output=True, text=True, env=self.env, input=stdin)
+        if check and run.returncode:
+            self.fail(f'{args}: {run.returncode} {run.stderr}')
+        return run
+
+    def listed(self):
+        return {m['id']: m for m in json.loads(self.run_cli('list', '--json').stdout)['sessions']}
+
+    def by(self, runtime, **kw):
+        return [m for m in self.listed().values() if m['runtime'] == runtime and all(m.get(k) == v for k, v in kw.items())]
+
+    def test_scan_indexes_every_runtime_without_touching_native_bytes_or_bodies(self):
+        before = tree_digest(self.home)
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        self.assertEqual(tree_digest(self.home), before)
+        codex = self.by('codex')
+        self.assertEqual(len(codex), 2, 'two Codex homes with one native id stay distinct')
+        self.assertEqual({m['owner'] for m in codex}, {'user', 'openclaw'})
+        self.assertEqual(len(self.by('claude', branch='dev')), 1)
+        self.assertEqual({m['status'] for m in self.by('copilot')}, {'unknown', 'unsupported'})
+        dump = ''.join(p.read_text() for p in self.state.rglob('*.json'))
+        self.assertNotIn('SECRET BODY', dump)
+        self.assertNotIn('PRIVATE', dump)
+
+    def test_titles_and_handoffs_survive_rescan_and_revision_conflict_fails(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        rev = json.loads(self.run_cli('show', sid).stdout)['revision']
+        self.run_cli('title', sid, 'my title', '--expect-revision', str(rev))
+        self.run_cli('handoff', sid, '--import', '-', '--expect-revision', str(rev + 1), stdin='# Next\nfinish it\n')
+        stale = self.run_cli('handoff', sid, '--import', '-', '--expect-revision', str(rev), stdin='x', check=False)
+        self.assertEqual(stale.returncode, 3)
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        shown = json.loads(self.run_cli('show', sid).stdout)
+        self.assertEqual(shown['title_override'], 'my title')
+        self.assertEqual(shown['handoff'], '# Next\nfinish it\n')
+        self.assertTrue((self.state / 'handoffs' / f'{sid}.md').stat().st_mode & 0o077 == 0)
+
+    def test_invalid_ids_and_oversize_handoffs_are_refused(self):
+        for bad in ('../../etc/passwd', 'claude-XYZ'):
+            self.assertEqual(self.run_cli('show', bad, check=False).returncode, 1)
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        big = self.run_cli('handoff', sid, '--import', '-', '--expect-revision', '1', stdin='x' * 70000, check=False)
+        self.assertEqual(big.returncode, 1)
+
+    def test_concurrent_writers_do_not_clobber(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        code = ('import sys; sys.path.insert(0, sys.argv[1]); from ai_ecosystem.store import Store\n'
+                's = Store(sys.argv[2])\nfor i in range(25):\n'
+                '    with s.lock(sys.argv[3]):\n        s.put(s.get(sys.argv[3]))\n    s.event(sys.argv[3], "t")\n')
+        procs = [subprocess.Popen([sys.executable, '-c', code, str(PLATFORM / 'lib'), str(self.state), sid]) for _ in range(4)]
+        self.assertEqual([p.wait() for p in procs], [0] * 4)
+        m = store.Store(self.state).get(sid)
+        self.assertEqual(m['revision'], 1 + 100)
+        self.assertGreaterEqual(len(store.Store(self.state).events(sid)), 100)
+
+    def test_partial_files_ignored_and_index_rebuildable(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        (self.state / 'manifests/.claude-0000.json.tmp').write_text('{"trunc')
+        (self.state / 'manifests/claude-00000000000000000000.json').write_text('{"trunc')
+        count = len(self.listed())
+        for p in (self.state / 'manifests').glob('*'):
+            p.unlink()
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        self.assertEqual(len(self.listed()), count)
+
+    def test_missing_source_goes_stale_but_failed_or_truncated_scan_does_not(self):
+        s = store.Store(self.state)
+        good = lambda recs: sessions.adapters.Source('k', 'claude', 'st', 'user', lambda: iter(recs))
+        rec = lambda i: sessions.adapters._rec(f'id{i}', str(self.work))
+        other = sessions.adapters.Source('o', 'claude', 'o', 'user', lambda: iter([rec(9)]))
+        sessions.scan(s, [good([rec(1), rec(2)]), other], 10)
+
+        def boom():
+            raise OSError('gone')
+            yield
+        report = sessions.scan(s, [sessions.adapters.Source('k', 'claude', 'st', 'user', boom)], 10)
+        self.assertEqual(report['k']['state'], 'error')
+        self.assertEqual({m['status'] for m in s.all()}, {'unknown'})
+        report = sessions.scan(s, [good([rec(1), rec(3)])], 1)
+        self.assertEqual(report['k']['state'], 'truncated')
+        self.assertEqual({m['status'] for m in s.all()}, {'unknown'})
+        sessions.scan(s, [good([rec(1)])], 10)
+        stat = {m['native_id']: m['status'] for m in s.all()}
+        self.assertEqual(stat, {'id1': 'unknown', 'id2': 'stale', 'id9': 'unknown'})
+
+    def test_resume_prints_quoted_command_and_never_fakes_unsupported(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        user = self.by('codex', owner='user')[0]
+        plan = json.loads(self.run_cli('resume', user['id']).stdout)
+        self.assertEqual(plan['argv'], ['codex', 'resume', UUID])
+        self.assertEqual(plan['env']['CODEX_HOME'], str(self.home / '.codex'))
+        for m in self.by('codex', owner='openclaw') + self.by('copilot'):
+            run = self.run_cli('resume', m['id'], '--execute', check=False)
+            self.assertEqual(run.returncode, 2)
+            self.assertFalse(json.loads(run.stdout)['supported'])
+
+    def test_crafted_metadata_cannot_inject_shell(self):
+        evil = sessions.resume_plan({'runtime': 'claude', 'owner': 'user', 'status': 'unknown',
+                                     'native_id': 'x; rm -rf ~', 'cwd': '/tmp', 'store': 's'})
+        self.assertFalse(evil['supported'])
+        plan = sessions.resume_plan({'runtime': 'claude', 'owner': 'user', 'status': 'unknown',
+                                     'native_id': UUID, 'cwd': "/tmp/a'; touch /tmp/pwn; '", 'store': 's'})
+        self.assertEqual(subprocess.run(['sh', '-n', '-c', plan['command']]).returncode, 0)
+        self.assertIn("'\"'\"'", plan['command'])
+        run = self.run_cli('resume', 'claude-' + '0' * 20, check=False)
+        self.assertEqual(run.returncode, 1)
+
+
+if __name__ == '__main__':
+    unittest.main()
