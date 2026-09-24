@@ -1,6 +1,10 @@
 ---
-name: "loop"
-description: "Direct an existing repository development loop from any owner-directed coding surface, with one ledger, isolated workers and recorded checks."
+name: loop
+description: >-
+  Run a repository's development loop: start a day, dispatch headless workers or OpenRig
+  worker seats on ready tasks, review and fold worker branches, and close the day with a
+  local merge or one pull request. Also lists and writes local task files. Use for "run the
+  loop", "start the team", "fold", "close the day".
 ---
 
 # loop
@@ -35,6 +39,13 @@ base without fetching. The worker brief points at the task file. `close` checks 
 writes `pr.md`; `close --merge`, in the owner's terminal with the base checked out and clean, merges
 the day into the base with `pr.md` as its message, moves the folded tasks to `done/`, and removes the
 day worktree and branch. `finish` only tidies a day the owner merged by hand. Nothing is pushed.
+
+`dev-loop tasks <repo>` lists the tasks on the base as the loop sees them. `tasks <repo> next`
+prints the next unused number, `tasks <repo> new "<title>" --scope <prefixes> [--depends "#N"]
+[--labels ..] [--ready]` writes a task file, and `tasks <repo> check` reports files the loop would
+skip or misread (no `Scope:`, an unknown dependency, two files for one number). `new` and `check`
+work in the checkout or worktree the command runs in, so a planning branch can write tasks before
+they reach the base. `intake` is the procedure that decides what the tasks are.
 
 ## Issue conventions
 

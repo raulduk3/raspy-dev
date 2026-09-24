@@ -1,30 +1,69 @@
 ---
 name: intake
-description: Turn a source (meeting notes, a call transcript, an email, the owner's notes, stored in the vault and never in a repository) into decision d…
+description: >-
+  Turn a goal, meeting notes, a transcript, an email or a `distill` candidate into
+  decision records, specification changes and implementable tasks. Works in local
+  repositories (decision and task files) and GitHub-backed ones (decision and task
+  issues). Use when asked to spec something out, plan work, or turn a request into tasks.
 ---
 
 # intake
 
-Turn a source (meeting notes, a call transcript, an email, the owner's notes, stored in the vault and never in a repository) or a candidate block pasted from `docs/incoming.html` into decision drafts, each with context, options, consequences and a recommendation, filed as `decision` issues in the affected repository. An accepted decision that changes behavior becomes a spec pull request with its decision record and an amendment ledger row; from the spec diff, cut implementable issues with `Scope:`, `Depends on:`, acceptance criteria citing spec sections and a milestone, labeled `needs-triage`. Every issue cites spec sections; every pull request cites its issue.
+Turn one source into the three records the loop needs: a decision the owner accepts, the
+specification lines it changes, and tasks a worker can take without asking. Every task cites the
+specification; every change cites its task.
+
+## Which backend
+
+Read the repository's line in `~/.config/dev-platform/repos.conf` (`owner/repo checkout
+local|owner|bot [base]`).
+
+- **local** (the default for `new-repo`): decisions are files under `docs/decisions/`, tasks are
+  files under `docs/tasks/`, and nothing leaves the machine. `#N` means task N.
+- **owner** or **bot**: decisions and tasks are GitHub issues written through
+  `<loop skill>/scripts/ghx <owner/repo> issue create ...`, which picks the identity. `#N` means
+  issue N.
+- Not listed: the `dev-loop` commands will refuse it. Propose the line
+  (`<owner>/<name> <checkout> local <base>`) for the owner to add, or work with the files by hand
+  in the same format.
 
 ## Procedure
 
-1. **Source.** One stakeholder record (meeting notes, a call transcript, an email, the owner's
-   notes), quoted and dated. It stays in the owner's notes; it is never copied into a repository.
-   A source may instead be a candidate block pasted from the repository's `docs/incoming.html`
-   (written by `distill`); the decision draft then cites the candidate id.
-2. **Map** each takeaway to the specification and to open issues. A takeaway the specification
-   already satisfies produces nothing. A takeaway it contradicts or leaves open produces one
-   decision draft. When the repository has no specification content yet, every takeaway is open,
-   and the first accepted decisions create the first SDD requirements and TDD items in
-   `docs/spec/`, following the conventions at the top of those files.
-3. **Decision drafts**: context with the spec sections quoted, options, consequences, a
-   recommendation, one question. Filed as `decision` issues in the affected repository through
-   `loop/scripts/ghx`, on the owner's word.
-4. **Spec change**: after the owner accepts a decision, one draft pull request edits the exact
-   specification lines, sets the requirement status to `pending:#<decision issue>`, adds the
-   decision record under `docs/decisions/`, and appends one row to `docs/spec/SPEC-AMENDMENTS.md`.
-5. **Cut issues** from the spec diff, each with `Scope:`, `Depends on:` (the spec pull request's
-   issue), acceptance criteria citing spec sections, a milestone, and the label `needs-triage`.
-6. **Traceability**: decision issue, then spec pull request citing it, then cut issues depending
-   on it, then worker pull requests closing them. `gh` can walk the chain.
+1. **Source.** One of: the owner's goal in a sentence or a paragraph; meeting notes, a call
+   transcript or an email; a candidate block pasted from `docs/incoming.html` (cite its id). Raw
+   records stay in the owner's notes and are never copied into a repository. Refer to them by
+   date and type only (`client call, 2026-09-17`); no quotes, no private names.
+2. **Read** `docs/spec/SDD.md`, `docs/spec/TDD.md`, `docs/decisions/`, the open tasks
+   (`dev-loop tasks <repo>` locally, `gh issue list` otherwise) and the code the TDD names.
+3. **Map** each takeaway. Already satisfied: nothing. Contradicted or left open: one decision.
+   An empty specification (a new repository) leaves everything open; the first decisions write
+   the first requirements, following the conventions at the top of `SDD.md` and `TDD.md`.
+4. **Decision drafts.** Context with the spec items quoted, options, consequences, a
+   recommendation and the one question the owner answers.
+   - local: `docs/decisions/NNNN-<slug>.md` from `0000-template.md`, the next unused four-digit
+     number, `Status: proposed`.
+   - GitHub: a `decision` issue through `ghx`, on the owner's word.
+   Stop here and ask. A goal the owner already stated plainly may be accepted in the same
+   conversation; record `Status: accepted` and the date.
+5. **Specification change**, after acceptance, on one branch cut from the base
+   (`docs/<slug>`; in a worktree when another writer holds the checkout): edit the exact SDD and
+   TDD lines, set each touched status to `pending:#<task>`, set the decision's `Spec:` field, and
+   append one row to `docs/spec/SPEC-AMENDMENTS.md`.
+6. **Cut tasks** from the spec diff, dependency ordered, each small enough for one worker.
+   - local: `dev-loop tasks <repo> new "<title>" --scope <prefixes> --depends "#N"|none
+     [--labels spec|enhancement|documentation] [--ready]`, run inside the branch's worktree; it
+     picks the number and writes the file in `docs/tasks/README.md` format. Replace the body
+     with what to build, the acceptance criteria and the SDD/TDD items that govern it. Then
+     `dev-loop tasks <repo> check` must report ok.
+   - GitHub: issues through `ghx` with the same body plus `Scope:` and `Depends on:` lines, a
+     milestone and `needs-triage`; the owner labels them `sprint-ready`.
+   Fill the `pending:#<task>` markers with the numbers just assigned.
+7. **Check** with `spec-lint` on the branch, then hand over. Local: the owner merges the branch
+   into the base in a terminal (`git merge --no-ff docs/<slug>`); the loop sees tasks only on the
+   base. GitHub: one draft pull request citing the decision issue.
+
+Traceability: decision, then the specification change that cites it, then tasks depending on
+it, then the worker changes that close them (`Closes #N` in the worker's `.worker-pr.md`).
+
+Keep the scope honest. A simple change the specification already covers goes straight to one
+task; do not manufacture decisions or tasks for every thought.
