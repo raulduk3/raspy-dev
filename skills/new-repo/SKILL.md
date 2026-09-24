@@ -16,7 +16,7 @@ hygiene and version scripts, and a Bun and TypeScript skeleton with its check. I
 
 ## Procedure
 
-1. **Ask only what changes the command:** the directory (default `~/Dev/<name>`), whether it is
+1. **Ask only what changes the command:** the directory, whether it is
    Ricky's own project (`--personal`) or professional work, and whether it needs GitHub now.
    Local is the default and needs no network; GitHub can be added later.
 2. **Run** `new-repo <directory> --register [--personal] [--owner <login>]`.
