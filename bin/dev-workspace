@@ -62,7 +62,7 @@ def main():
         os.execve(str(rig), [str(rig), "tui", *(["--shared"] if args.shared else [])], env)
 
     name = f"development-{args.runtime}"
-    inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
+    inventory = json.loads(run("ps", "--json", "--all-rigs", "--include-archived", capture=True).stdout)
     if isinstance(inventory, dict):
         if inventory.get("truncated"):
             parser.exit(2, "Rig inventory is truncated; inspect it before starting another seat.\n")
