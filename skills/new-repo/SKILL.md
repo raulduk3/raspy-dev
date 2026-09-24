@@ -1,6 +1,6 @@
 ---
 name: new-repo
-description: Initialize a repository to the standard from this platform's templates with `bin/new-repo`: the instruction and policy files, pull request t…
+description: "Initialize a repository to the standard from this platform's templates with `bin/new-repo`: the instruction and policy files, pull request t…"
 ---
 
 # new-repo

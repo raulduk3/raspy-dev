@@ -1,6 +1,6 @@
 ---
 name: spec-lint
-description: Check a specification tree for the repository standard: every subsection carries its lock marker, every status marker cites an issue by numb…
+description: "Check a specification tree for the repository standard: every subsection carries its lock marker, every status marker cites an issue by numb…"
 ---
 
 # spec-lint
