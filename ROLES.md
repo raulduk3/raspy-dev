@@ -84,12 +84,16 @@ keep that safe, and all four are mechanisms already installed:
 
 ## Session titles
 
-Every agent session on an engineering repository (Claude Code in the terminal, the desktop app,
-Cowork, the editor extension) carries one title format so the session list reads like the
-ledger: sortable by area, searchable by pull request or issue number. The owner sets the title
-with the tool's rename command. Every interactive surface proposes it on one line in its first
-reply, `Title: kind(area): Description #ref`, and proposes a new one when the scope changes.
-Headless workers are excluded.
+All agents and contexts may name their own sessions automatically once the task is known,
+and update their own generated title when the scope materially changes. This includes
+interactive sessions, headless workers, delegated agents, engineering and personal work.
+Preserve owner-assigned titles; naming does not require a separate confirmation. Use only
+supported native naming controls, never direct transcript/database edits or renaming another
+agent's live session. Where no native naming control is available, an explicitly identified
+index-only title or a suggested title is a fallback, not a completed native rename.
+
+The canonical capability and naming contract is [Session naming](docs/session-naming.md).
+For engineering work, use:
 
 `kind(area): Description #ref`
 

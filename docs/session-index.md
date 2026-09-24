@@ -39,6 +39,15 @@ the directory if you want them.
 A session ID is the runtime plus a digest of the native store and native ID, so the same
 native ID in two Codex homes or two OpenClaw agents never collides.
 
+### Titles are index-only
+
+`ai-session title ID TEXT --expect-revision N` changes only this index's display override.
+It does not rename a Claude, Codex, OpenClaw, VS Code or OpenRig conversation. `show` keeps
+both the last observed native `title` and the local `title_override`; rescanning preserves
+the override and native identity. Read the current revision before writing and do not
+replace an owner-assigned title. Follow [Session naming](session-naming.md) for automatic
+self-naming and supported native capabilities; the index is not a native rename API.
+
 ### What each adapter reads
 
 | Runtime | Source | Fields kept |

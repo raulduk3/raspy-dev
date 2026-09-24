@@ -5,6 +5,32 @@ Apple Silicon. It adds two alternative one-seat RigSpecs and a small native CLI
 launcher, not a web dashboard, queue, scheduler, or model proxy. Models and login
 remain the harness's choice. The existing loop remains execution authority.
 
+## Upstream workflow and current integration boundary
+
+The [official getting-started guide](https://www.openrig.dev/docs/getting-started)
+demonstrates mixed harness rigs: Conveyor has two Claude and two Codex seats;
+Product Team has four Claude and three Codex seats. **OpenRig supports both native
+Claude Code and Codex seats.** This platform deliberately starts one owner-directed
+control seat at a time over the existing loop, not another agent dispatcher.
+
+Native tmux discovery/adoption applies to compatible terminal sessions, not arbitrary
+Claude Desktop conversations. A catalog link, process inventory, message delivery, or
+successful MCP read does not mean OpenRig owns or can steer a Desktop session. Keep
+session ownership explicit and do not launch replacements for existing controllers.
+
+Account profiles are a separate capability from harness support. In installed OpenRig
+0.5.14 the provider-account registry accepts Codex profiles only; account-switch
+execution is not wired and reports `failed_safely` with
+`switch_execution_not_yet_wired`. That is **not** a restriction on Claude seats. The
+local registry was empty at inspection on 2026-09-24; no cross-account routing has been
+configured or verified. Continue to use native harness authentication and do not build
+a custom account router, copy credentials, or silently fall back to another account.
+Recheck these version-specific facts before relying on a later upstream release.
+
+All control contexts may name their own sessions under the shared
+[session-naming contract](../../docs/session-naming.md). Native conversation titles,
+OpenRig seat labels, project names, and account identities are different metadata.
+
 ## Repeatable installation
 
 Install the official `@openrig/cli@0.5.14` npm package under

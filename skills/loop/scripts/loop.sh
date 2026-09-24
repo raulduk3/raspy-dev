@@ -78,6 +78,26 @@ WORKER_MODEL="${LOOP_WORKER_MODEL:-sonnet}"
 today="$(TZ=America/Chicago date +%Y-%m-%d)"
 ctl="$state/${repo//\//__}"; mkdir -p "$ctl"
 GHX="$here/ghx"
+ACCOUNT_CLI="$here/../../../bin/ai-account"
+
+verify_loop_account() {
+  local result
+  if [ -z "${LOOP_ACCOUNT_ID:-}" ]; then
+    # Capture separately: a pipeline without pipefail masks a failed registry read.
+    # An unreadable selection must never fall through to an unbound legacy launch.
+    result="$("$ACCOUNT_CLI" selected)" || return 2
+    LOOP_ACCOUNT_ID="$(jq -r '.selected // empty' <<<"$result")" || return 2
+  fi
+  [ -n "${LOOP_ACCOUNT_ID:-}" ] || return 0
+  case "$LOOP_ACCOUNT_ID" in
+    anthropic-gmail|anthropic-apple) ;;
+    *) echo "loop: account selection requires a Claude subscription; this loop has no Codex or z.ai worker adapter" >&2; return 2 ;;
+  esac
+  result="$(cd "$(repo_dir)" && "$ACCOUNT_CLI" status "$LOOP_ACCOUNT_ID")" || return 2
+  jq -e '.identity == "verified" and .runtime == "claude"' >/dev/null <<<"$result" || {
+    echo "loop: selected account is not verified; no worker allocated or steer changed" >&2; return 2;
+  }
+}
 
 repo_dir() {
   local d; d="$(awk -v r="$repo" '$1==r {print $2}' "$CONF" 2>/dev/null | head -1)"
@@ -241,13 +261,25 @@ this issue, and any lock digest that guards it.
 Never push, open a pull request, comment on GitHub, merge, mark ready, approve, deploy, restart,
 rebase or amend, or touch another worktree. The owner reviews this branch on this machine.
 EOF
-    launch_worker "$i" "$wt" "$model" "$branch"
+    launch_worker "$i" "$wt" "$model" "$branch" "$title"
   done
 }
 
-launch_worker() {  # issue worktree model branch: start one headless worker in an existing worktree
-  local i="$1" wt="$2" model="$3" branch="$4"
-  local envf common v
+launch_worker() {  # issue worktree model branch title: start a new native conversation
+  local i="$1" wt="$2" model="$3" branch="$4" title="$5"
+  local envf common v session_title description
+  local selected_account="${LOOP_ACCOUNT_ID:-}"
+  local -a worker_command
+  worker_command=(claude)
+  if [ -n "$selected_account" ]; then
+    worker_command=("$ACCOUNT_CLI" run --account "$selected_account" --)
+    jq -cn --arg id "$selected_account" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{account_id:$id, runtime:"claude", attempted_at:$at, scope:"new worker attempt"}' >> "$out/workers/$i.account.jsonl"
+  fi
+  # Display metadata only: no native ID changes or historical session edits.
+  description="$(jq -nr --arg title "$title" '$title | gsub("[[:space:][:cntrl:]]+"; " ") | sub("^ +"; "") | sub("[ .]+$"; "") | .[0:60]')"
+  [ -n "$description" ] || description="Implement issue"
+  session_title="${branch%%/*}(repo): $description #$i"
   common="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)"
   envf="${DEV_PLATFORM_ENV_DIR:-$HOME/.config/dev-platform/env.d}/$(basename "$(dirname "$common")").sh"
   rm -f "$out/workers/$i.exit"
@@ -264,7 +296,7 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
     # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
     python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
       "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
-      claude --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+      "${worker_command[@]}" --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
@@ -352,6 +384,7 @@ case "$verb" in
     ;;
   go)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     printf 'go%s\n' "${*:+ $*}" > "$ctl/steer"
     sense >/dev/null
     sel="$(select_from_plan "$@")"
@@ -364,6 +397,7 @@ case "$verb" in
     ;;
   resume)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     [ $# -gt 0 ] || { echo "loop: resume needs issue numbers" >&2; exit 2; }
     dir="$(repo_dir)"
     for i in "$@"; do
@@ -376,7 +410,8 @@ case "$verb" in
       [ -f "$wt/.worker-brief.md" ] || { echo "#$i: brief gone, worker finished; review or fold instead"; continue; }
       [ -f "$wt/.worker-blocked.md" ] && { echo "#$i: blocked, widen the scope first"; continue; }
       branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
-      j="$(gh issue view "$i" --repo "$repo" --json labels,body)"
+      j="$(gh issue view "$i" --repo "$repo" --json title,labels,body)"
+      title="$(jq -r '.title // ""' <<<"$j")"
       labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"; model="$(tier_model "$labels")"
       # The owner may have widened Scope: in the issue body since dispatch; the brief carries the current line.
       scope="$(jq -r '(.body // "") | capture("(?m)^Scope: *(?<s>[^\n]+)")? .s // "unspecified"' <<<"$j")"
@@ -387,7 +422,7 @@ s=re.sub(r'^Scope \(only these path prefixes may change\): .*$', lambda m: 'Scop
 open(p,'w').write(s)
 PY
       [ -f "$out/workers/$i.log" ] && mv "$out/workers/$i.log" "$out/workers/$i.log.$(date +%H%M%S)"
-      launch_worker "$i" "$wt" "$model" "$branch"
+      launch_worker "$i" "$wt" "$model" "$branch" "$title"
     done
     ;;
   pause)
@@ -396,6 +431,7 @@ PY
   tick)
     [ "$(steer_word)" = go ] || { echo NO_REPLY; exit 0; }
     [ -n "$day" ] || { echo NO_REPLY; exit 0; }
+    verify_loop_account
     running="$(running_workers | wc -l | tr -d ' ')"
     cap=$((CAP - running)); [ "$cap" -gt 0 ] || { echo NO_REPLY; exit 0; }
     sense >/dev/null

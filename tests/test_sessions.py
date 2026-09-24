@@ -94,7 +94,13 @@ class SessionIndex(unittest.TestCase):
         self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
         sid = self.by('claude')[0]['id']
         rev = json.loads(self.run_cli('show', sid).stdout)['revision']
+        native_before = tree_digest(self.home)
+        before = json.loads(self.run_cli('show', sid).stdout)
         self.run_cli('title', sid, 'my title', '--expect-revision', str(rev))
+        indexed = json.loads(self.run_cli('show', sid).stdout)
+        self.assertEqual(indexed['native_id'], before['native_id'])
+        self.assertEqual(indexed['title'], before['title'])
+        self.assertEqual(tree_digest(self.home), native_before, 'an index title is not a native rename')
         self.run_cli('handoff', sid, '--import', '-', '--expect-revision', str(rev + 1), stdin='# Next\nfinish it\n')
         stale = self.run_cli('handoff', sid, '--import', '-', '--expect-revision', str(rev), stdin='x', check=False)
         self.assertEqual(stale.returncode, 3)
