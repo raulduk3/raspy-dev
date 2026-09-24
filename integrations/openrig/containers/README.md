@@ -2,6 +2,15 @@
 
 Candidate deployment for four account-pinned OpenRig hosts. One pinned image, four instances, no credential swapping or proxy. Account environments own execution; project/conversation records own the work. **Image build and two OpenAI environment runtime checks passed on Docker Desktop (Linux arm64). Native account login, worker messaging and recovery remain unverified.**
 
+The source image now also includes Pi 0.87.1. That addition has not been built or
+deployed: earlier image checks cover the coding-worker image without Pi. The
+runtime checker now requires Pi and will reject an older image. Do not recreate
+an environment during an active login or worker session simply to satisfy this
+check. Pi's native configuration uses the selected account's persistent home;
+this does not import or convert Codex/Claude credentials. Canonical conversation
+mounts, role resources and account-service launch integration remain necessary.
+See [Pi integration](../../../docs/pi-container-integration.md).
+
 ## Prepare and run
 
 Docker Engine and Compose must be available. Preparation creates private host directories and opaque control tokens, preserving existing tokens on retry. It never copies provider credentials or edits the active OpenRig host registry.
@@ -38,7 +47,7 @@ Install the selected project checkout or worktree into each account's `workspace
 
 Record the environment host ID, project, actual host/container workspace mapping, native runtime and native session ID against the existing conversation. The persistent home is native software storage; the conversation index references it rather than copying transcripts into a second live store. Container paths such as `/workspace` are not host paths: discovery/resume must translate through an explicit environment binding. Use `ai-session scan --no-openclaw --environments-root /absolute/private/account-environments` to scan the persistent native homes. The index translates the two declared mount paths, retains container paths, reports unavailable homes honestly, and refuses host-native resume of these OpenRig-owned records. Actual host-targeted Rig resume and verified seat/occupant associations remain pending.
 
-No automatic usage-based routing is implemented by this deployment. Accounts stay pinned; choose a host for new work and use a checkpointed handoff for changing execution environments. Pi and host-level Morty tools remain separate from these coding workers.
+No automatic usage-based routing is implemented by this deployment. Accounts stay pinned; choose a host for new work and use a checkpointed handoff for changing execution environments. Pi must use these same account environments through the account service, while retaining its own role/session lifecycle. Host-level Morty tools still need explicit capability integration.
 
 ## Acceptance before activation
 

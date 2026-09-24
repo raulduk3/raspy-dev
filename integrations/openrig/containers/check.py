@@ -49,7 +49,8 @@ def check(root, names):
         assert request(port, path, token)[0] == 404
         versions = {}
         for command, expected in [('node', 'v24.14.0'), ('rig', '0.5.14'),
-                                  ('codex', 'codex-cli 0.144.6'), ('claude', '2.1.280')]:
+                                  ('codex', 'codex-cli 0.144.6'), ('claude', '2.1.280'),
+                                  ('pi', '0.87.1')]:
             value = subprocess.check_output(['docker', 'exec', container, command, '--version'], text=True).strip()
             assert value.startswith(expected), value
             versions[command] = value

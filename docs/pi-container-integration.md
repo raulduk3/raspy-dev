@@ -9,7 +9,9 @@ evidence that the containers are running or that authentication is complete.
 
 The candidate image uses Node 24.14.0. Pinned Pi 0.87.1 requires Node >=22.19.0,
 so the declared Node versions are compatible. The candidate image currently
-installs OpenRig, Claude Code and Codex only. It does not yet install Pi or the
+includes a source change to install Pi 0.87.1 alongside OpenRig, Claude Code and
+Codex. The Pi addition has not been built/deployed; the running coding-worker
+image is not Pi acceptance evidence. The image does not yet include the
 dev-platform role resources. Its current mounts expose the account's persistent
 home and a workspace, not the canonical conversation, journal or history inputs.
 
