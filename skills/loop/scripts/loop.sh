@@ -175,13 +175,22 @@ ATTRIBUTION='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|(
 day="$(day_branch)"; dayd="${day#loop/}"; [ -n "$day" ] || dayd="$today"
 out="$ctl/$dayd"; mkdir -p "$out/workers"
 
-tier_model() {  # issue labels -> Claude Code model (MODELS.md tiers)
+PSTACK_MODELS="${DEV_PLATFORM_PSTACK_MODELS:-$HOME/.config/dev-platform/pstack-models.md}"
+pstack_model() {  # role label -> the first model on its line in the setup-pstack file, if any
+  [ -f "$PSTACK_MODELS" ] || return 0
+  awk -v r="$1: " 'index($0, r) == 1 { v = substr($0, length(r) + 1); sub(/,.*/, "", v); gsub(/^ +| +$/, "", v); print v; exit }' "$PSTACK_MODELS"
+}
+tier_model() {  # issue labels -> Claude Code model, optionally <model>-<effort> (MODELS.md tiers)
   [ -z "${LOOP_MODEL:-}" ] || { echo "$LOOP_MODEL"; return 0; }
+  local role fallback slug
   case ",$1," in
-    *",spec,"*|*",decision,"*|*",privacy,"*|*",security,"*) echo "opus" ;;
-    *",documentation,"*) echo "haiku" ;;
-    *) echo "$WORKER_MODEL" ;;
+    *",spec,"*|*",decision,"*|*",privacy,"*|*",security,"*) role="judgment and prose"; fallback=opus ;;
+    *",documentation,"*) echo "haiku"; return 0 ;;
+    *) role="feature, refactoring"; fallback="$WORKER_MODEL" ;;
   esac
+  slug="$(pstack_model "$role")"
+  # A worker has no parent chat to inherit, and this loop starts Claude workers only.
+  case "$slug" in ''|inherit-parent|auto|codex:*) echo "$fallback" ;; *) echo "$slug" ;; esac
 }
 running_workers() {  # "pid issue" only for verified supervisors owned by this repository
   python3 "$here/worker-run.py" --running "$ctl" "$(repo_dir)"
@@ -293,7 +302,8 @@ EOF
 
 launch_worker() {  # issue worktree model branch title: start a new native conversation
   local i="$1" wt="$2" model="$3" branch="$4" title="$5"
-  local envf common v session_title description
+  local envf common v session_title description effort=""
+  case "${model##*-}" in max|xhigh|high|medium|low) effort="${model##*-}"; model="${model%-*}" ;; esac
   local selected_account="${LOOP_ACCOUNT_ID:-}"
   local -a worker_command issue_tools=()
   local_mode || issue_tools=("Bash(gh issue view *)")
@@ -332,7 +342,7 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
     # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
     python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
       "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
-      "${worker_command[@]}" --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+      "${worker_command[@]}" --name "$session_title" --model "$model" ${effort:+--effort "$effort"} --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" ${issue_tools[@]+"${issue_tools[@]}"} \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \

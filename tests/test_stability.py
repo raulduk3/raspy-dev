@@ -492,6 +492,37 @@ class LocalLoopTests(Fixture):
             self.assertIn(expected, problems)
         self.loop('tasks', 'new', 'No scope', expected=2)
 
+    def test_workers_take_model_and_effort_from_the_setup_pstack_file(self):
+        (self.repo / 'docs/tasks/4-spec.md').write_text(
+            '# Spec\n\nStatus: ready\nLabels: spec\nScope: docs/spec\nDepends on: none\n')
+        self.commit()
+        (self.config / 'pstack-models.md').write_text(
+            '# budget: medium (high)\nfeature, refactoring: sonnet-high\n'
+            'judgment and prose: fable-max, codex:gpt-5.6-sol-max\n')
+        calls = self.base / 'claude.calls'
+        claude = self.fakebin / 'claude'
+        claude.write_text('#!/usr/bin/env python3\nimport json, sys\n'
+                          f'open({str(calls)!r}, "a").write(json.dumps(sys.argv[1:]) + "\\n")\n')
+        claude.chmod(0o755)
+        env = dict(self.env, DEV_PLATFORM_PSTACK_MODELS=str(self.config / 'pstack-models.md'))
+        self.loop('start')
+        self.loop('go', env=env)
+        for _ in range(250):
+            if calls.exists() and len(calls.read_text().splitlines()) == 2:
+                break
+            time.sleep(0.02)
+        launched = {}
+        for line in calls.read_text().splitlines():
+            argv = json.loads(line)
+            launched[argv[argv.index('--name') + 1].rsplit(' ', 1)[1]] = argv
+        for issue, model, effort in (('#1', 'sonnet', 'high'), ('#4', 'fable', 'max')):
+            argv = launched[issue]
+            self.assertEqual(argv[argv.index('--model') + 1], model)
+            self.assertEqual(argv[argv.index('--effort') + 1], effort)
+        # A codex: entry is skipped for a Claude worker; the first Claude model on the line wins.
+        (self.config / 'pstack-models.md').write_text('judgment and prose: codex:gpt-5.6-sol-max\n')
+        self.assertIn('(opus)', self.loop('resume', '4', env=env).stdout)
+
     def test_tasks_refuse_a_github_backed_repository(self):
         self.configure(base='develop', personal=True, identity='owner')
         self.assertIn('GitHub issues', self.loop('tasks', expected=2).stdout)
