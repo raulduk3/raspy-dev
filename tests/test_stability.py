@@ -3,9 +3,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 PLATFORM = Path(__file__).resolve().parents[1]
@@ -341,6 +343,90 @@ class GuardTests(Fixture):
 
 
 class WorkerBoundTests(Fixture):
+    def wait_for_file(self, path, timeout=8):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.exists():
+                return
+            time.sleep(0.02)
+        self.fail(f'timed out waiting for {path}')
+
+    def detached_supervisor(self, timed_out):
+        self.setup_remote()
+        self.loop('start')
+        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        workers = self.ctl() / day / 'workers'
+        wt = self.repo / '.claude/worktrees/loop-1-fixture'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/fixture', wt)
+        (wt / '.worker-brief.md').write_text('Harmless lifecycle fixture only.\n')
+        gh = self.fakebin / 'gh'
+        gh.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"labels":[],"body":"Scope: source"}\'\n')
+        claude = self.fakebin / 'claude'
+        claude.write_text('''#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+assert sys.stdin.read() == ''
+assert 'DO_NOT_INHERIT' not in os.environ
+assert os.environ['SAFE_FIXTURE'] == 'yes'
+Path('child.started').write_text(json.dumps({'pid': os.getpid(), 'parent': os.getppid()}))
+print('fixture stdout', flush=True)
+print('fixture stderr', file=sys.stderr, flush=True)
+while not Path('child.release').exists(): time.sleep(0.02)
+sys.exit(7)
+''')
+        env = dict(self.env, LOOP_WORKER_MAX_SECONDS='3' if timed_out else '10',
+                   DO_NOT_INHERIT='fixture', SAFE_FIXTURE='yes', DEV_PLATFORM_ENV_PASS='SAFE_FIXTURE')
+        ready = self.base / 'launcher.ready'
+        # Keep a short-lived outer shell in its own group, then emulate tool cleanup.
+        launcher = subprocess.Popen(
+            ['bash', '-c', 'bash "$1" resume test/repo 1 && touch "$2"; exec sleep 20',
+             'fixture-launcher', str(LOOP), str(ready)], cwd=self.repo, env=env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        supervisor = child = None
+        try:
+            self.wait_for_file(ready)
+            self.wait_for_file(wt / 'child.started')
+            metadata = json.loads((wt / 'child.started').read_text())
+            child = metadata['pid']
+            supervisor = int((workers / '1.pid').read_text())
+            self.assertEqual(supervisor, metadata['parent'], 'PID must name the actual supervisor')
+            os.killpg(launcher.pid, signal.SIGTERM)
+            launcher.wait(timeout=3)
+            time.sleep(0.1)
+            os.kill(supervisor, 0)
+            os.kill(child, 0)
+            self.assertFalse((workers / '1.exit').exists(), 'supervisor must wait for its child')
+            self.assertEqual(os.getpgid(supervisor), supervisor, 'supervisor must detach from launcher')
+            if not timed_out:
+                (wt / 'child.release').touch()
+            self.wait_for_file(workers / '1.exit')
+            result = json.loads((workers / '1.exit').read_text())
+            self.assertEqual(result['exit_code'], 124 if timed_out else 7)
+            self.assertEqual(result['reason'], 'wall_time_limit' if timed_out else 'exited')
+            if timed_out:
+                self.assertLess(result['elapsed_seconds'], 8)
+            log = (workers / '1.log').read_text()
+            self.assertIn('fixture stdout', log)
+            self.assertIn('fixture stderr', log)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
+        finally:
+            # Only fixture process groups. Never touch real loop state or workers.
+            for pid in (launcher.pid, supervisor, child):
+                if pid is not None:
+                    try:
+                        os.killpg(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            launcher.wait(timeout=3)
+
+    def test_supervisor_survives_launcher_group_cleanup_and_reports_exit(self):
+        self.detached_supervisor(timed_out=False)
+
+    def test_supervisor_survives_launcher_group_cleanup_and_bounds_worker(self):
+        self.detached_supervisor(timed_out=True)
+
     def test_supervisor_sanitizes_environment_and_reports_exit(self):
         result = self.base / 'worker.exit'
         env = dict(self.env, DO_NOT_INHERIT='fixture', SAFE_FIXTURE='yes', DEV_PLATFORM_ENV_PASS='SAFE_FIXTURE')
