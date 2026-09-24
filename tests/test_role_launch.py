@@ -61,6 +61,24 @@ class RoleLaunch(unittest.TestCase):
         options.update(overrides)
         return role_launch.plan(self.conversation['id'], **options)
 
+    def test_search_key_comes_from_the_keychain_only_at_launch(self):
+        fake = self.root / 'fakebin'
+        fake.mkdir(exist_ok=True)
+        security = fake / 'security'
+        security.write_text('#!/bin/sh\n[ "$3" = dev-platform-perplexity ] && [ "$4" = -w ] && [ -n "$KEY" ] '
+                            '&& echo "$KEY" && exit 0\nexit 44\n')
+        security.chmod(0o755)
+        base = {'PATH': '/usr/bin'}
+        with mock.patch.dict(os.environ, {'PATH': str(fake), 'KEY': 'pplx-synthetic'}):
+            env, state = role_launch.with_search(base, offline=False)
+            self.assertEqual((env['PERPLEXITY_API_KEY'], state), ('pplx-synthetic', 'on'))
+            self.assertNotIn('PERPLEXITY_API_KEY', base)
+            self.assertEqual(role_launch.with_search(base, offline=True), (base, 'offline'))
+        with mock.patch.dict(os.environ, {'PATH': str(fake), 'KEY': ''}):
+            env, state = role_launch.with_search(base, offline=False)
+            self.assertNotIn('PERPLEXITY_API_KEY', env)
+            self.assertIn('no dev-platform-perplexity Keychain item', state)
+
     def test_plan_requires_explicit_account_configured_profile_and_identity(self):
         with self.assertRaisesRegex(ValueError, 'choose an account'):
             self.plan(account=None)

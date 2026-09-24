@@ -1,14 +1,17 @@
 """Account-bound Pi role launcher: conversation -> identity -> profile -> lock -> exec.
 
 Selection is explicit or the registry's selected account. The launcher never
-imports credentials, never claims Pi identity equals the account's Codex or
-Claude binding, and holds the conversation's writer lock across exec.
+imports account credentials, never claims Pi identity equals the account's Codex or
+Claude binding, and holds the conversation's writer lock across exec. The one secret
+it handles is the search tool's API key, read from the Keychain at launch and passed
+only in the Pi process environment.
 """
 import argparse
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 
 from . import accounts, conversations, environment_service, memory as agent_memory, pi_launch
@@ -16,6 +19,9 @@ from .store import Store
 
 PLATFORM = Path(__file__).resolve().parents[2]
 KEEP_ENV = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'COLORTERM', 'TERM_PROGRAM', 'SHELL', 'TMPDIR')
+# The Perplexity key for the roles' search tool lives in the login Keychain under this
+# service name. Add it once: security add-generic-password -s dev-platform-perplexity -a "$USER" -w
+SEARCH_KEYCHAIN_SERVICE = 'dev-platform-perplexity'
 MODEL_ID = r'[A-Za-z0-9][A-Za-z0-9._:-]{0,63}'
 JOURNAL_CONF = Path.home() / '.config/dev-platform/journal.conf'
 PI_RUNTIMES = Path.home() / '.local/share/dev-platform/pi-runtime'
@@ -194,6 +200,22 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
     return result, env
 
 
+def with_search(env, offline):
+    """Give the role's Perplexity tool its key for this one process. The key is read from the
+    Keychain at launch, passed only in the Pi environment, and never printed or written."""
+    if offline:
+        return env, 'offline'
+    security = shutil.which('security')
+    if not security:
+        return env, 'off: no Keychain on this machine'
+    found = subprocess.run([security, 'find-generic-password', '-s', SEARCH_KEYCHAIN_SERVICE, '-w'],
+                           capture_output=True, text=True)
+    key = found.stdout.strip() if found.returncode == 0 else ''
+    if not key:
+        return env, f'off: no {SEARCH_KEYCHAIN_SERVICE} Keychain item'
+    return {**env, 'PERPLEXITY_API_KEY': key}, 'on'
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-root', type=Path)
@@ -220,7 +242,8 @@ def main(argv=None):
             return 0
         if not sys.stdin.isatty() or not sys.stdout.isatty():
             raise ValueError('launch needs an interactive terminal; use plan to inspect')
-        print(result['header'], file=sys.stderr, flush=True)
+        env, search = with_search(env, args.offline)
+        print(result['header'] + f' | search {search}', file=sys.stderr, flush=True)
         pi_launch.exec_conversation(result['launch']['conversationHome'], result['argv'], env)
     except (OSError, ValueError) as error:
         print('ai-role: ' + str(error), file=sys.stderr)

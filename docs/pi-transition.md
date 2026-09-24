@@ -45,7 +45,7 @@ The host account service now has native launch support. Both providers’ comple
 
 `integrations/pi/role-resources.mjs` is the reusable resource-loading component for the future account-bound launcher. It consumes an already validated conversation, absolute conversation/platform/auth/identity paths, and returns explicit cwd, Pi resources, in-memory settings and the conversation's native session directory.
 
-Personal Morty and system Neo use a neutral workspace within the conversation home and load no repository context. Project/formation Iztac and project Neo use the bound workspace and Pi's repository-context discovery. All roles load shared session-entry guidance and their explicitly supplied identity file; only Iztac receives the engineering skill. Automatic extensions, skills, prompt templates and themes are disabled. The Perplexity extension is explicitly loaded; live search remains unverified.
+Personal Morty and system Neo use a neutral workspace within the conversation home and load no repository context. Project/formation Iztac and project Neo use the bound workspace and Pi's repository-context discovery. All roles load shared session-entry guidance and their explicitly supplied identity file; only Iztac receives the engineering skill. Automatic extensions, skills, prompt templates and themes are disabled. The Perplexity extension is explicitly loaded. `ai-role launch` reads its key from the login Keychain item `dev-platform-perplexity` and passes it only in the Pi process environment; live search remains unverified until that item exists.
 
 Pass `historyArchive` as an absolute preservation-directory path to expose the
 `agent_history` tool. The embedded tool binds the role from the conversation,

@@ -273,6 +273,17 @@ tmux attach -t <seat-name>        # Ctrl-b then d to detach
 rig down <rig-name>               # stops every seat, keeps a snapshot
 ```
 
+**Give Morty, Neo and Iztac web search.** Their search tool uses Perplexity, and its key
+lives in your login Keychain. Add it once; the command asks for the key without showing it:
+
+```bash
+security add-generic-password -s dev-platform-perplexity -a "$USER" -w
+```
+
+The role launcher reads it at each launch and passes it only to that Pi process. The launch
+line ends with `search on` or says why it is off. Claude and Codex sessions use their own
+built-in web search, not Perplexity.
+
 ## What was changed on this machine, and how to undo each
 
 - **OpenRig is a local fork.** Build `0.5.14 (113182b7)` opens herdr views inside the rig's
