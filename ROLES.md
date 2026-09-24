@@ -69,8 +69,8 @@ tolerate attribution.
 
 ## Using the desktop apps freely without breaking the rules
 
-The owner may work in Claude desktop and the ChatGPT app as much as suits the task. Four things
-keep that safe, and all four are mechanisms already installed:
+The owner may work in Claude desktop and the ChatGPT app as much as suits the task. Five things
+keep that safe, and all five are mechanisms already installed:
 
 1. Any code work happens in a worktree on a `type/slug` branch and ends in a draft pull request.
    The app is the surface; the ledger is still GitHub.
@@ -79,7 +79,12 @@ keep that safe, and all four are mechanisms already installed:
 3. The loop has one execution authority and ledger, not one privileged interface. On the
    owner's direction, OpenRig, OpenClaw, Claude Code and Codex may use the shared `ai-work`
    adapter to inspect and control that same loop. They do not create a competing queue.
-4. Thinking output leaves the chat window as text on the ledger. If it is worth keeping, it is
+4. Temporary scripts, probes and generated artifacts stay inside the current project worktree,
+   the loop worker worktree, or that project's ledger/artifacts directory. A desktop app must
+   not write, chmod or run engineering scripts from `~/Desktop`, `~/Downloads` or another
+   personal holding area. If the right project is unclear, it stops with a proposed destination
+   map instead of creating a convenience script.
+5. Thinking output leaves the chat window as text on the ledger. If it is worth keeping, it is
    an issue comment, a decision issue or a spec pull request.
 
 ## Session titles
@@ -140,4 +145,6 @@ It does not do a smaller version of the work to be helpful. Examples:
 - You are about to write process narrative into a repository: names of people, tools, models,
   sessions, run identifiers.
 - You are holding state that only exists in this conversation. Put it on the ledger or stop.
+- You are about to create or run a helper script from `~/Desktop`, `~/Downloads` or another
+  personal holding area instead of the project worktree or ledger/artifacts directory.
 - You have been working for hours without a pull request to show for it.

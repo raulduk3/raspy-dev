@@ -419,6 +419,16 @@ class GuardTests(Fixture):
         self.configure(personal=True)
         self.guard(command, 0)
 
+    def test_desktop_script_workspace_refusal(self):
+        desktop = self.home / 'Desktop' / 'probe.sh'
+        for command in (f'cat > {desktop} <<EOF\necho bad\nEOF',
+                        f'chmod +x {desktop}',
+                        f'bash {desktop}',
+                        'bash ~/Desktop/probe.sh'):
+            with self.subTest(command=command):
+                self.guard(command, 2)
+        self.guard(f'ls {desktop}', 0)
+
     def test_ghx_owner_actions_refused_for_both_identities(self):
         self.setup_remote()
         for identity in ('owner', 'bot'):

@@ -313,7 +313,7 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
         "Bash(pwd)" "Bash(which *)" "Bash(mkdir *)" "Bash(rm .worker-blocked.md)" \
         "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(bun install*)" \
         "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
-        "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
+        "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(npm *)" "Bash(node *)" "Bash(npx *)" "Bash(rm .worker-brief.md)" \
         "Bash(bash $HOOKS/check-once.sh*)" \
       <<'PY'
 from pathlib import Path

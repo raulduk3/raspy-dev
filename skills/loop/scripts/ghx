@@ -16,7 +16,7 @@ repo="${1:?owner/repo}"; shift
 CONF="${DEV_PLATFORM_REPOS:-$HOME/.config/dev-platform/repos.conf}"
 BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] && . "$BRIEF_CONF"
-BOT_REF="${DEV_PLATFORM_BOT_TOKEN_REF:-op://Employee/bot GitHub token/credential}"
+BOT_REF="${DEV_PLATFORM_BOT_TOKEN_REF:-op://Private/dev-platform bot GitHub token/credential}"
 repository_identity() {
   local common
   common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
