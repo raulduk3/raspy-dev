@@ -77,6 +77,14 @@ Owner-directed OpenRig, OpenClaw, Claude Code and Codex sessions may run `start`
 Writes to GitHub go through `scripts/ghx <owner/repo> <gh args>`, which picks the identity from
 `repos.conf` and refuses merge, ready and review on every repository.
 
+## Worker seats
+
+With `LOOP_SEAT_RIG=<running rig>`, dispatch cuts the worktree and brief as usual and gives the
+issue an interactive seat in that rig's `workers` pod instead of a headless worker
+(`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex). The owner removes the seat
+(`dev-workspace remove-worker`) before fold; fold refuses while its block remains and refuses a
+branch that commits OpenRig's managed context. See `docs/rig-working-branches.md`.
+
 ## Base and execution limits
 
 The fourth `repos.conf` column pins the base. Without it, a personal repository uses its remote default branch; a professional repository uses `develop`. An open day retains its recorded `day-base`. Read status before starting from another surface. `LOOP_WORKER_MAX_TURNS`, `LOOP_WORKER_MAX_SECONDS` and `LOOP_WORKER_TOKEN_CEILING` declare worker bounds; token ceiling is a prompt budget, not a provider spending cap. Quota failure stops the lane rather than silently switching accounts.

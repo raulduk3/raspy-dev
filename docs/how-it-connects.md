@@ -72,12 +72,18 @@ When a seat starts in a folder, OpenRig places three small files there:
 - `.claude/settings.local.json`: tells Claude to run OpenRig's status line, so the daemon
   can watch context usage.
 - `.openrig/context-collector.cjs`: that status line script.
-- `CLAUDE.md`: a short note telling the agent which seat it is.
+- `CLAUDE.md` for Claude, `AGENTS.md` for Codex: guidance blocks added to the file, or the
+  file created if it is missing. They tell the agent which seat it is and how to behave.
 
 This is OpenRig treating the folder as the seat's workspace. It is harmless in a scratch
 folder or one of your own projects. It is the reason the launcher refuses to start a seat
 directly inside a professional repository checkout: those files would show up in someone
-else's git status. Use a worktree or a separate folder for client work.
+else's git status.
+
+For project work the rule is one seat per working branch. The control seat and the Codex
+overseer run from an engagement folder outside the repository. Each worker seat runs in the
+worktree the loop cut for its issue, and is removed before its branch is folded, which puts
+the guidance files back. `docs/rig-working-branches.md` has the commands.
 
 ## Day to day
 

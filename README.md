@@ -5,8 +5,8 @@ initialized to, and the tools that keep them in place.
 
 - `docs/how-it-connects.md`: the map of the whole setup, accounts, homes, seats, rigs and
   OpenRig, for the person using it. Start there.
-- `docs/rig-working-branches.md`: the target shape for rigs, one seat per working branch,
-  spawned from a root seat, with a Codex overseer.
+- `docs/rig-working-branches.md`: the control rig, one worker seat per loop worktree and
+  a Codex overseer; how to start it and fold its work.
 - `templates/`: files copied into every new repository (agent instructions, contributing
   policy, pull request template, code owners, dependency updates, check and release workflows,
   the hygiene check, the version script, the decision record template, the empty specification

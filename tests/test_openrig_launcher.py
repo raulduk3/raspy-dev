@@ -29,13 +29,26 @@ with open(os.environ['CALLS'], 'a') as f:
 if a == ['--version']: print('0.5.14 (cc75efdd)')
 elif a == ['daemon', 'status']: print(os.environ.get('DAEMON_STATE', 'Daemon running on port 4400 (pid 1)'))
 elif a == ['ps', '--json', '--include-archived']: print(os.environ.get('RIGS', '[]'))
+elif a[:2] == ['ps', '--nodes']:
+    seats = os.environ['SEATS']
+    print(json.dumps([json.loads(l) for l in open(seats)] if os.path.exists(seats) else []))
 elif a[0] == 'ps': sys.exit(2)
+elif a[0] == 'add':
+    member = open(a[3]).read().split('\\n')[0].split(': ')[1]
+    if not os.environ.get('ADD_LOST'):
+        with open(os.environ['SEATS'], 'a') as f:
+            f.write(json.dumps({'logicalId': a[2] + '.' + member,
+                                'canonicalSessionName': a[2] + '-' + member + '@' + a[1]}) + '\\n')
+    sys.exit(int(os.environ.get('ADD_EXIT', '0')))
 elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
 ''')
         rig.chmod(0o755)
         self.env = dict(os.environ, DEV_WORKSPACE_RUNTIME=str(self.root), CALLS=str(self.log),
                         CODEX_HOME='/not-the-personal-store',
-                        DEV_PLATFORM_PERSONAL=str(self.root / 'personal.conf'))
+                        DEV_PLATFORM_PERSONAL=str(self.root / 'personal.conf'),
+                        SEATS=str(self.root / 'seats.jsonl'),
+                        DEV_WORKSPACE_STATE_DIR=str(self.root / 'state'),
+                        DEV_WORKSPACE_ADD_WAIT='0')
 
     def call(self, *args):
         return subprocess.run([str(LAUNCHER), *args], env=self.env, text=True, capture_output=True)
@@ -111,6 +124,96 @@ elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
         result = self.call('start', 'codex', '--cwd', str(repo))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len([r for r in self.records() if r['args'][0] == 'up']), 2)
+
+
+    def test_iztac_control_rig_uses_its_template_and_stays_outside_checkouts(self):
+        folder = self.root / 'engagement'
+        folder.mkdir()
+        result = self.call('start', 'iztac', '--cwd', str(folder))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = [r['args'] for r in self.records() if r['args'][0] == 'up']
+        self.assertTrue(commands[-1][1].endswith('integrations/openrig/iztac.yaml'))
+        repo = self.root / 'personal'
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+        (self.root / 'personal.conf').write_text(str(repo) + '\n')
+        result = self.call('start', 'iztac', '--cwd', str(repo))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('engagement folder', result.stderr)
+        self.assertNotEqual(self.call('start', 'iztac', '--cwd', str(folder), '--account', 'openai-apple').returncode, 0)
+
+
+class WorkerSeats(unittest.TestCase):
+    """add-worker and remove-worker against a real Git worktree and the fake rig."""
+    call = WorkspaceLauncherTests.call
+    records = WorkspaceLauncherTests.records
+
+    def setUp(self):
+        WorkspaceLauncherTests.setUp(self)
+        self.repo = self.root / 'personal'
+        git = lambda *a: subprocess.run(['git', '-C', str(self.repo), *a], check=True, capture_output=True)
+        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
+        (self.repo / 'CLAUDE.md').write_text('# Repository rules\n')
+        git('add', '.')
+        git('-c', 'user.name=t', '-c', 'user.email=t@t.invalid', 'commit', '-qm', 'init')
+        self.wt = self.repo / '.claude/worktrees/loop-12-fix-parser'
+        git('worktree', 'add', '-q', '-b', 'fix/fix-parser-12', str(self.wt))
+        (self.root / 'personal.conf').write_text(str(self.repo) + '\n')
+        self.env['RIGS'] = json.dumps([{'rigId': 'R1', 'name': 'development-iztac'}])
+
+    def add(self, *extra):
+        return self.call('add-worker', 'claude', '--rig', 'development-iztac', '--cwd', str(self.wt), *extra)
+
+    def test_add_worker_joins_the_workers_pod_from_its_worktree(self):
+        result = self.add()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('tmux attach -t workers-issue-12@R1', result.stdout)
+        add = [r['args'] for r in self.records() if r['args'][0] == 'add']
+        self.assertEqual(add[0][:3], ['add', 'R1', 'workers'])
+        fragment = Path(add[0][3]).read_text()
+        self.assertIn('id: issue-12\n', fragment)
+        self.assertIn('runtime: claude-code\n', fragment)
+        self.assertIn(f'cwd: "{self.wt.resolve()}"', fragment)
+        self.assertIn('integrations/openrig/agents/worker', fragment)
+        self.assertNotIn('config_home', fragment)
+        exclude = (self.repo / '.git/info/exclude').read_text().splitlines()
+        self.assertIn('.openrig/', exclude)
+        self.assertEqual(self.add().returncode, 2)  # one seat per worktree
+
+    def test_client_timeout_is_verified_not_retried(self):
+        self.env['ADD_EXIT'] = '1'
+        self.assertEqual(self.add().returncode, 0)
+        self.env['ADD_LOST'] = '1'
+        self.wt = self.repo / '.claude/worktrees/loop-13-other'
+        subprocess.run(['git', '-C', str(self.repo), 'worktree', 'add', '-q', '-b', 'fix/other-13', str(self.wt)], check=True)
+        result = self.add()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('before trying again', result.stderr)
+        self.assertEqual(len([r for r in self.records() if r['args'][0] == 'add']), 2)
+
+    def test_refuses_the_checkout_itself_a_professional_repo_and_a_stopped_rig(self):
+        checkout = self.call('add-worker', 'claude', '--rig', 'development-iztac', '--cwd', str(self.repo))
+        self.assertIn('linked worktree', checkout.stderr)
+        self.env['RIGS'] = '[]'
+        self.assertIn('not one running rig', self.add().stderr)
+        (self.root / 'personal.conf').write_text('')
+        self.assertIn('professional', self.add().stderr)
+        self.assertFalse(any(r['args'][0] == 'add' for r in self.records()))
+
+    def test_remove_worker_restores_tracked_guidance(self):
+        self.assertEqual(self.add().returncode, 0)
+        claude = self.wt / 'CLAUDE.md'
+        claude.write_text('# Repository rules\n\n\n<!-- BEGIN OpenRig MANAGED BLOCK: role -->\nrole\n'
+                          '<!-- END OpenRig MANAGED BLOCK: role -->\n\n<!-- BEGIN OpenRig MANAGED BLOCK: '
+                          'CULTURE-default.md -->\nculture\n<!-- END OpenRig MANAGED BLOCK: CULTURE-default.md -->\n')
+        (self.wt / 'AGENTS.md').write_text('<!-- BEGIN OpenRig MANAGED BLOCK: role -->\nx\n<!-- END OpenRig MANAGED BLOCK: role -->\n')
+        result = self.call('remove-worker', '--rig', 'development-iztac', '--cwd', str(self.wt))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(['remove', 'R1', 'workers.issue-12'], [r['args'] for r in self.records()])
+        self.assertEqual(claude.read_text(), '# Repository rules\n')
+        self.assertFalse((self.wt / 'AGENTS.md').exists())
+        status = subprocess.run(['git', '-C', str(self.wt), 'status', '--porcelain', '--untracked-files=no'],
+                                capture_output=True, text=True).stdout
+        self.assertEqual(status, '')
 
 
 class TmuxEnvironmentScrub(unittest.TestCase):

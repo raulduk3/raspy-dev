@@ -1,75 +1,86 @@
 # Rigs on working branches
 
-Direction recorded 2026-09-24. This is the target shape for the Iztac control rig.
-It reuses the loop skill's existing branch contract; it does not invent a second one.
+Every worker seat works in its own Git worktree, on the branch the loop cut for its
+issue. Seats join from a control rig that the owner starts once per engagement. This
+reuses the loop skill's branch contract; it does not add a second one.
 
-## The rule
-
-One rig is one project engagement. Every seat's working directory is a Git worktree
-on a branch the loop already knows about. No seat works in the checkout itself and
-no two seats share a worktree.
+## The shape
 
 | Seat | Runtime and account | Working directory | Branch |
 | --- | --- | --- | --- |
-| Root (`lead`) | Claude Code, verified Anthropic account | the day worktree `.claude/worktrees/day-<date>` | `loop/<date>` |
-| Worker (one per issue) | Claude Code or Codex, account chosen by the account service | that issue's worker worktree | `type/slug-N` cut from `loop/<date>` |
-| Overseer | Codex, the other provider on purpose | the day worktree, read-only | `loop/<date>` |
+| Control (`control.lead`) | Claude Code, native default home | an engagement folder outside the repository | none |
+| Overseer (`review.overseer`) | Codex, native default home | the same engagement folder | none; reads with `git -C` |
+| Worker (`workers.issue-N`) | Claude Code or Codex, any verified account | the loop's worktree for issue N | `type/slug-N`, cut from `loop/<date>` |
 
-The root seat is the Iztac control surface described in
-`integrations/openrig/agents/control`. It plans through the adapted pstack
-workflow and the loop ledger. It spawns the rest: it asks the loop to cut a
-worker worktree, then adds one member to the rig for that worktree. Workers do
-not create their own branches and do not add seats.
+Control and overseer stay out of the repository on purpose. OpenRig writes guidance
+blocks into the folder's `CLAUDE.md` or `AGENTS.md`. Repositories track those files, so
+a seat in the day worktree would keep it modified, and the loop folds only into a clean
+day worktree. Workers do sit in worktrees, one seat each, and are removed before fold.
 
-The overseer reads worker diffs (`git diff loop/<date>..<branch>`), each worker's
-`.worker-pr.md` and the recorded check, and reports. It never folds, pushes or
-answers a permission prompt for a worker. Folding stays with the owner, exactly as
-the loop skill says today. Putting the overseer on a Codex account gives an
-independent reading from a different provider and keeps one provider's quota from
-gating both writing and review.
+The control seat directs the loop on the owner's word, using the pstack-informed
+practice in its guidance. The overseer reads worker diffs, each `.worker-pr.md` and the
+recorded check, and reports. It never edits, folds, pushes or answers a worker's prompt.
+Putting it on the other provider gives an independent reading and keeps one provider's
+quota from gating both writing and review.
 
-## How it maps onto what exists
+## Using it
 
-- **Branches and worktrees** come from the loop skill. `loop.sh` already cuts
-  `loop/<date>` into the day worktree and `type/slug-N` into a worker worktree per
-  issue. A rig adds seats to those directories; it does not replace the script.
-- **Accounts** come from the account service. Each member carries `config_home` for
-  an isolated home, or nothing for a native-default account, the same way
-  `dev-workspace` renders a single control seat today. Usage per seat is attributed
-  through that pin.
-- **Seats** come from OpenRig. A rig starts with the root and overseer pods and an
-  empty workers pod. Each dispatched issue becomes one `rig add <rig> workers
-  <member-fragment>`, which is the same call that added the overseer to
-  `apple-four` today. The member fragment is six lines: id, label, agent_ref, profile,
-  runtime, cwd, plus `config_home` when the account is isolated.
-- **Templates** live in `integrations/openrig`. The control agent stays silent at
-  boot. Issue briefs are delivered the way the loop already delivers them, in the
-  worker's directory, not through OpenRig startup files.
+Start the control rig from an empty engagement folder. `start` refuses a folder inside a
+Git checkout.
 
-## What has to be built
+```bash
+mkdir -p ~/Dev/engagements/<repo> && dev-workspace start iztac --cwd ~/Dev/engagements/<repo>
+```
 
-1. A spec `integrations/openrig/iztac-control.yaml` with pods `root`, `workers`
-   (empty) and `review`, rendered per account by `dev-workspace` the way the
-   single-seat spec is rendered now.
-2. A `dev-workspace add-worker <rig> <issue>` step that reads the worker worktree
-   path from the loop ledger, resolves the account, writes the fragment to
-   `~/.local/state/dev-platform/openrig/` and calls `rig add`. Interactive seats
-   replace the headless worker for that issue; the worker contract (commit, run
-   `hooks/check-once.sh`, write `.worker-pr.md`, stop) is unchanged.
-3. Managed files in worktrees. OpenRig writes `.claude/settings.local.json`,
-   `.openrig/` and `CLAUDE.md` into every seat's directory. In a personal
-   repository they are harmless. In a professional repository a worker worktree
-   must exclude them before the seat starts (`.git/info/exclude` is per repository,
-   so the add step writes the entries), and `fold` must refuse a branch that
-   commits any of them, as it already refuses `.worker-*` files. This is the one
-   blocking item; until it exists, rigs stay in personal repositories and external
-   folders, which is what `dev-workspace` enforces today.
-4. Removal. When the owner folds an issue, the seat for it comes down with the
-   worktree. `rig down` on the rig ends the engagement; the day branch survives it.
+Let the loop give each dispatched issue a seat instead of a headless worker. The loop
+still cuts the worktree and writes `.worker-brief.md`; `LOOP_SEAT_RUNTIME` picks `claude`
+(the default) or `codex`, and `LOOP_ACCOUNT_ID` pins the account.
 
-## Proven today
+```bash
+LOOP_SEAT_RIG=development-iztac dev-loop go <owner/repo>
+```
 
-`rig add` onto a running rig works with the patched daemon: `intake-overseer@apple-four`
-is a Codex seat on the native Apple home, added to a live four-seat Claude rig
-without restarting anything. Per-seat account pinning through `config_home` was
-proven earlier the same day. Nothing above needs a further change to OpenRig beyond the `config_home` patch.
+A worktree the loop already cut can take a seat directly:
+
+```bash
+dev-workspace add-worker claude --rig development-iztac --cwd <worktree> --account anthropic-apple
+```
+
+The worker waits until told to start, then follows its brief and stops after writing
+`.worker-pr.md`. To fold it, remove its seat first; this restores the worktree's tracked
+guidance files. Fold refuses while a seat's block is still there, and refuses a branch
+that commits OpenRig's blocks or `.openrig/`.
+
+```bash
+dev-workspace remove-worker --rig development-iztac --cwd <worktree>
+```
+
+## What the pieces are
+
+- `integrations/openrig/iztac.yaml`: the template. Pods `control`, `review` and an empty
+  `workers` pod that seats join.
+- `integrations/openrig/agents/overseer` and `agents/worker`: their guidance, beside the
+  existing silent `control` agent.
+- `bin/dev-workspace add-worker` and `remove-worker`. Add resolves the account through the
+  account service, writes a member fragment to `~/.local/state/dev-platform/openrig/`,
+  excludes `.openrig/` in the repository, and calls `rig add`. The client gives up after
+  five seconds while the daemon finishes, so the result is read back from the rig, never
+  retried blind. Remove calls `rig remove`, then strips the blocks with the same rule as
+  OpenRig's own teardown, which `rig remove` does not run.
+- `skills/loop/scripts/loop.sh`: the `LOOP_SEAT_RIG` branch in worker launch and the two
+  fold refusals.
+
+## Limits
+
+- Professional repositories stay refused, for workers as for any seat. OpenRig's blocks in
+  a tracked `CLAUDE.md` or `AGENTS.md` would be one careless `git add` from a commit.
+- Control and overseer run on the native default homes. Pinning them per account needs a
+  two-member renderer that does not exist yet; workers are already pinnable.
+- Seats do not count toward the loop's running-worker cap. The plan's local cap still
+  bounds how many issues one `go` dispatches.
+- Every seat starts by asking permission to run `rig whoami`, from OpenRig's boot hint.
+  That prompt is the owner's to answer.
+
+Proven 2026-09-24 on a scratch personal repository: the rig started with its three pods,
+a worker seat joined on the Apple Anthropic home, and after `remove-worker` the worktree's
+status was empty.

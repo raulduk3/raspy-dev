@@ -4,9 +4,11 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
+import time
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,7 +67,7 @@ def render_openrig_spec(name, runtime, cwd, config_home):
     spec is written into a state directory, not beside
     integrations/openrig/agents, so "local:" would not resolve; "path:" does.
     """
-    agent_ref = "path:" + str(ROOT / "integrations/openrig/agents/control")
+    member = render_member("control", "Coding control", "control", runtime, cwd, config_home)
     lines = [
         'version: "0.2"',
         f"name: {name}",
@@ -74,17 +76,22 @@ def render_openrig_spec(name, runtime, cwd, config_home):
         "  - id: development",
         "    label: Development",
         "    members:",
-        "      - id: control",
-        "        label: Coding control",
-        f"        agent_ref: {json.dumps(agent_ref)}",
-        "        profile: default",
-        f"        runtime: {runtime}",
-        f"        cwd: {json.dumps(str(cwd))}",
+        "      - " + member[0],
+        *("        " + line for line in member[1:]),
+        "    edges: []",
+        "edges: []",
     ]
-    if config_home:
-        lines.append(f"        config_home: {json.dumps(config_home)}")
-    lines += ["    edges: []", "edges: []"]
     return "\n".join(lines) + "\n"
+
+
+def render_member(member_id, label, agent, runtime, cwd, config_home):
+    """One RigSpec member as YAML lines, in the order the upstream reference uses."""
+    agent_ref = "path:" + str(ROOT / "integrations/openrig/agents" / agent)
+    lines = [f"id: {member_id}", f"label: {json.dumps(label)}", f"agent_ref: {json.dumps(agent_ref)}",
+             "profile: default", f"runtime: {runtime}", f"cwd: {json.dumps(str(cwd))}"]
+    if config_home:
+        lines.append(f"config_home: {json.dumps(config_home)}")
+    return lines
 
 
 def write_generated_spec(name, runtime, cwd, config_home):
@@ -96,15 +103,148 @@ def write_generated_spec(name, runtime, cwd, config_home):
     integrations/openrig/README.md's own ~/.local/state/dev-platform
     convention for generated, non-product state.
     """
+    return write_state_file(f"{name}.yaml", render_openrig_spec(name, runtime, cwd, config_home))
+
+
+def write_state_file(filename, text):
     state_root = Path(os.environ.get("DEV_WORKSPACE_STATE_DIR",
                                      Path.home() / ".local/state/dev-platform/openrig"))
     state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(state_root, 0o700)
-    spec_path = state_root / f"{name}.yaml"
-    fd = os.open(spec_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    path = state_root / filename
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as stream:
-        stream.write(render_openrig_spec(name, runtime, cwd, config_home))
-    return spec_path
+        stream.write(text)
+    return path
+
+
+def git_common_dir(path, env):
+    result = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            env=env, text=True, capture_output=True)
+    return Path(result.stdout.strip()).resolve() if result.returncode == 0 else None
+
+
+def professional(path, env):
+    """A checkout outside personal.conf is professional: native boot must not write into it."""
+    identity = git_common_dir(path, env)
+    if identity is None:
+        return False
+    personal = Path(os.environ.get("DEV_PLATFORM_PERSONAL", Path.home() / ".config/dev-platform/personal.conf"))
+    entries = personal.read_text().splitlines() if personal.is_file() else []
+    return not any(git_common_dir(Path(line.strip()).expanduser(), env) == identity
+                   for line in entries if line.strip() and not line.lstrip().startswith("#"))
+
+
+def worker_worktree(cwd, env):
+    """A worker seat works in a linked worktree on its own branch, as the loop cuts one per
+    issue (.claude/worktrees/loop-<issue>-<slug> on type/slug-<issue>). Returns the member
+    id, the branch and the common Git directory, or None."""
+    listing = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--path-format=absolute",
+                              "--show-toplevel", "--git-dir", "--git-common-dir"],
+                             env=env, text=True, capture_output=True)
+    branch = subprocess.run(["git", "-C", str(cwd), "symbolic-ref", "--short", "-q", "HEAD"],
+                            env=env, text=True, capture_output=True).stdout.strip()
+    if listing.returncode != 0 or not branch:
+        return None
+    top, git_dir, common = (Path(line).resolve() for line in listing.stdout.splitlines())
+    if top != cwd.resolve() or git_dir == common:
+        return None
+    issue = re.match(r"loop-(\d+)-", cwd.name)
+    member = f"issue-{issue.group(1)}" if issue else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+    return member, branch, common
+
+
+MANAGED_BLOCK = re.compile(r"(?:\n|^)\s*<!-- BEGIN (OpenRig|RIGGED) MANAGED BLOCK: [\s\S]*?"
+                           r"<!-- END \1 MANAGED BLOCK: [^>]+ -->\s*(?=\n|\Z)")
+
+
+def strip_managed_blocks(path):
+    """`rig remove` stops a seat but leaves its guidance blocks in the folder's CLAUDE.md or
+    AGENTS.md, which a worktree tracks. Same rule as OpenRig's own removeManagedBlocksFromFile
+    (packages/daemon/src/domain/managed-blocks.ts), which runs only on a whole-rig teardown."""
+    if not path.is_file():
+        return False
+    original = path.read_text()
+    cleaned = re.sub(r"\n{3,}", "\n\n", MANAGED_BLOCK.sub("\n", original)).strip()
+    if not cleaned:
+        path.unlink()
+        return True
+    if cleaned != original.strip():
+        path.write_text(cleaned + "\n")
+        return True
+    return False
+
+
+def running_rig_id(run, name):
+    inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
+    if isinstance(inventory, dict):
+        inventory = inventory["entries"]
+    live = [r for r in inventory if (r.get("rigName") or r.get("name")) == name
+            and not (r.get("archivedAt") or r.get("isArchived"))]
+    return live[0]["rigId"] if len(live) == 1 else None
+
+
+def seat_names(run, name):
+    """logicalId -> tmux session for every seat of one rig."""
+    nodes = json.loads(run("ps", "--nodes", "--rig", name, "--json", capture=True).stdout)
+    return {n.get("logicalId"): n.get("canonicalSessionName") for n in nodes if isinstance(n, dict)}
+
+
+def worker_seat(args, rig, run, env, parser):
+    """add-worker puts one seat in the workers pod of a running rig, in one loop worktree;
+    remove-worker takes it out and restores the worktree's guidance files."""
+    cwd = args.cwd.resolve()
+    identity = worker_worktree(cwd, env)
+    if identity is None:
+        parser.exit(2, "A worker seat needs a linked worktree on its own branch, such as the one "
+                       "the loop cuts for an issue.\n")
+    member_id, branch, common = identity
+    logical = f"workers.{member_id}"
+    rig_id = running_rig_id(run, args.rig)
+    if args.action == "remove-worker":
+        if rig_id and logical in seat_names(run, args.rig):
+            run("remove", rig_id, logical)
+        restored = [name for name in ("CLAUDE.md", "AGENTS.md") if strip_managed_blocks(cwd / name)]
+        print(f"{logical} removed; restored {', '.join(restored) or 'nothing'} in {cwd}", flush=True)
+        return 0
+    if professional(cwd, env):
+        parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
+                       "directory, not a professional repository checkout.\n")
+    if rig_id is None:
+        parser.exit(2, f"{args.rig} is not one running rig; start it before adding workers.\n")
+    if logical in seat_names(run, args.rig):
+        parser.exit(2, f"{args.rig} already has a seat for {logical}.\n")
+    config_home = None
+    if args.account:
+        config_home = resolve_account_plan(args.account, args.runtime, cwd, env, parser)["member"].get("config_home")
+    # OpenRig's collector lands untracked in the worktree; keep it out of status and commits.
+    exclude = common / "info/exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    present = exclude.read_text().splitlines() if exclude.is_file() else []
+    with exclude.open("a") as stream:
+        for pattern in (".openrig/", ".claude/settings.local.json"):
+            if pattern not in present:
+                stream.write(pattern + "\n")
+    runtime = "claude-code" if args.runtime == "claude" else "codex"
+    fragment = write_state_file(f"{args.rig}.{member_id}.member.yaml", "\n".join(
+        render_member(member_id, f"Worker {branch}", "worker", runtime, cwd, config_home)) + "\n")
+    removed = scrub_tmux_environment()
+    if removed:
+        print("Removed inherited provider overrides from the tmux server: " + ", ".join(removed), flush=True)
+    # The client gives up after five seconds while the daemon finishes the launch, so the
+    # outcome is read back from the rig rather than from this exit code. Never retry blind.
+    subprocess.run([str(rig), "add", rig_id, "workers", str(fragment)], env=env)
+    deadline = time.monotonic() + float(os.environ.get("DEV_WORKSPACE_ADD_WAIT", "120"))
+    while True:
+        session = seat_names(run, args.rig).get(logical)
+        if session or time.monotonic() > deadline:
+            break
+        time.sleep(3)
+    if not session:
+        parser.exit(1, f"{logical} not confirmed in {args.rig}; inspect `rig ps --nodes --rig {args.rig}` "
+                       "before trying again.\n")
+    print(f"{logical} on {branch}: tmux attach -t {session}", flush=True)
+    return 0
 
 
 def resolve_account_plan(account, runtime, cwd, env, parser):
@@ -135,15 +275,23 @@ def resolve_account_plan(account, runtime, cwd, env, parser):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", nargs="?", default="open", choices=["open", "plan", "start"])
-    parser.add_argument("runtime", nargs="?", choices=["codex", "claude"])
+    parser.add_argument("action", nargs="?", default="open", choices=["open", "plan", "start", "add-worker", "remove-worker"])
+    parser.add_argument("runtime", nargs="?", choices=["codex", "claude", "iztac"],
+                        help="iztac starts the control rig: a control seat, a Codex overseer and an "
+                             "empty workers pod, from an engagement folder outside the repository")
     parser.add_argument("--cwd", type=Path, help="Explicit working directory for a new control seat")
+    parser.add_argument("--rig", help="The running rig a worker seat joins or leaves")
     parser.add_argument("--shared", action="store_true", help="Attach an already configured kernel terminal; never boot one")
     parser.add_argument("--account", choices=ACCOUNTS,
                         help="Resolve and pin one native account for this seat through the account "
                              "service; renders a distinct per-account rig so two accounts never collide")
     args = parser.parse_args()
-    if args.action != "open" and (not args.runtime or not args.cwd):
+    workers = args.action in ("add-worker", "remove-worker")
+    if workers and (not args.rig or not args.cwd):
+        parser.error(f"{args.action} requires --rig and --cwd")
+    if args.action == "add-worker" and args.runtime not in ("claude", "codex"):
+        parser.error("add-worker requires a claude or codex runtime")
+    if args.action in ("plan", "start") and (not args.runtime or not args.cwd):
         parser.error("plan/start require a runtime and --cwd")
     if args.action == "open" and (args.runtime or args.cwd):
         parser.error("open does not select or launch a coding seat")
@@ -151,8 +299,8 @@ def main():
         parser.error("--shared applies only to open")
     if args.cwd and not args.cwd.is_dir():
         parser.error("--cwd must be an existing directory")
-    if args.account and args.action not in ("plan", "start"):
-        parser.error("--account applies only to plan/start")
+    if args.account and args.action not in ("plan", "start", "add-worker"):
+        parser.error("--account applies only to plan, start and add-worker")
     if args.account and account_runtime(args.account) != args.runtime:
         parser.error(f"--account {args.account} does not match runtime {args.runtime}")
 
@@ -187,6 +335,8 @@ def main():
 
     if args.action == "open":
         os.execve(str(rig), [str(rig), "tui", *(["--shared"] if args.shared else [])], env)
+    if workers:
+        return worker_seat(args, rig, run, env, parser)
 
     account_plan = None
     if args.account:
@@ -215,21 +365,13 @@ def main():
         if args.action == "start":
             # Native boot writes managed context into cwd. Never introduce it into
             # a professional checkout; use an external project-world instead.
-            def common_dir(path):
-                result = subprocess.run(["git", "-C", str(path), "rev-parse",
-                                         "--path-format=absolute", "--git-common-dir"],
-                                        env=env, text=True, capture_output=True)
-                return Path(result.stdout.strip()).resolve() if result.returncode == 0 else None
-            identity = common_dir(args.cwd)
-            if identity is not None:
-                personal = Path(os.environ.get("DEV_PLATFORM_PERSONAL",
-                                               Path.home() / ".config/dev-platform/personal.conf"))
-                entries = personal.read_text().splitlines() if personal.is_file() else []
-                permitted = any(common_dir(Path(line.strip()).expanduser()) == identity
-                                for line in entries if line.strip() and not line.lstrip().startswith("#"))
-                if not permitted:
-                    parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
-                                   "directory, not a professional repository checkout.\n")
+            if professional(args.cwd, env):
+                parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
+                               "directory, not a professional repository checkout.\n")
+            # Its seats would hold the day worktree's tracked guidance files modified, and the
+            # loop folds only into a clean day worktree. Workers get worktrees of their own.
+            if args.runtime == "iztac" and git_common_dir(args.cwd, env) is not None:
+                parser.exit(2, "The iztac control rig works from an engagement folder outside the repository.\n")
         if account_plan is not None:
             member = account_plan["member"]
             spec_path = write_generated_spec(name, member["runtime"], member["cwd"], member.get("config_home"))

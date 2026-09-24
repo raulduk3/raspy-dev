@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-import shutil
+import pty
 import signal
 import subprocess
 import sys
@@ -330,6 +330,44 @@ class LoopTests(Fixture):
         self.loop('close', '--as', 'main', expected=2)
         (out / 'folded-1.md').write_text('## What changed and why\n\nGenerated with Codex\n')
         self.loop('close', expected=1)
+
+
+    def in_owner_terminal(self, *args):
+        """Run a loop verb with a pseudo-terminal on stdin and stdout, as the owner's own shell."""
+        master, slave = pty.openpty()
+        process = subprocess.Popen(['bash', LOOP, *args], cwd=self.repo, env=self.env,
+                                   stdin=slave, stdout=slave, stderr=slave)
+        os.close(slave)
+        output = b''
+        while True:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output += chunk
+        process.wait(timeout=25)
+        os.close(master)
+        return output.decode()
+
+    def test_fold_refuses_an_attached_seat_and_committed_managed_context(self):
+        self.setup_remote(); self.loop('start')
+        day = (self.ctl() / 'day-branch').read_text().strip()
+        wt = self.repo / '.claude/worktrees/loop-1-example'
+        self.run_cmd('git', 'worktree', 'add', '-q', '-b', 'fix/example-1', wt, day)
+        (wt / 'source').write_text('changed\n')
+        (wt / 'CLAUDE.md').write_text('<!-- BEGIN OpenRig MANAGED BLOCK: role -->\nx\n<!-- END OpenRig MANAGED BLOCK: role -->\n')
+        self.run_cmd('git', 'commit', '-qam', 'fix: example', cwd=wt)
+        fold = lambda: self.in_owner_terminal('fold', 'test/repo', '1')
+        self.assertIn('seat is still attached', fold())
+        (wt / 'CLAUDE.md').unlink()
+        (wt / '.openrig').mkdir()
+        (wt / '.openrig/context-collector.cjs').write_text('collector\n')
+        self.run_cmd('git', 'add', '-f', '.openrig', cwd=wt)
+        self.run_cmd('git', 'commit', '-qm', 'fix: stray', cwd=wt)
+        self.assertIn("commits OpenRig's managed context", fold())
+        self.assertTrue(wt.exists())
 
 
 class GuardTests(Fixture):

@@ -144,6 +144,11 @@ in place of the shared `codex.yaml`/`claude.yaml`. Reusing an existing per-accou
 rig still re-resolves the account plan first, as identity revalidation, not
 reselection.
 
+`dev-workspace start iztac --cwd <engagement folder>` starts the control rig from
+`iztac.yaml`: a control seat, a Codex overseer and an empty `workers` pod. Worker seats
+join and leave it one loop worktree at a time with `add-worker` and `remove-worker`;
+see `docs/rig-working-branches.md`.
+
 The launcher removes inherited `CODEX_HOME` and `CODEX_THREAD_ID` from its child
 environment so standalone Codex uses its native personal store. It does not
 rewrite either store or migrate OpenClaw-owned conversations. An already running
