@@ -18,6 +18,8 @@ PLATFORM = Path(__file__).resolve().parents[2]
 KEEP_ENV = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'COLORTERM', 'TERM_PROGRAM', 'SHELL', 'TMPDIR')
 MODEL_ID = r'[A-Za-z0-9][A-Za-z0-9._:-]{0,63}'
 JOURNAL_CONF = Path.home() / '.config/dev-platform/journal.conf'
+PI_RUNTIMES = Path.home() / '.local/share/dev-platform/pi-runtime'
+PI_PACKAGE = '@earendil-works/pi-coding-agent'
 
 
 def provider_for(account):
@@ -31,6 +33,30 @@ def identity_file(agent, agents_root):
         if candidate.is_file():
             return candidate.resolve()
     raise ValueError(f'no identity file for {agent}; author agents/{agent}/identity.md')
+
+
+def pi_modules(platform=None):
+    """Where Node finds the Pi package.
+
+    Node resolves a bare import from node_modules beside the importing file. A release
+    carries none, because integrations/pi/.gitignore excludes it, so the pinned runtime
+    is linked there once. Without this a launch dies on an unresolved import, which is
+    exactly how a working checkout hides the problem from a released install.
+    """
+    root = Path(platform or PLATFORM) / 'integrations/pi'
+    local = root / 'node_modules'
+    if (local / PI_PACKAGE).is_dir():
+        return local
+    if local.exists() and not local.is_symlink():
+        raise ValueError('integrations/pi/node_modules exists without the Pi package; '
+                         'reinstall it rather than letting a launch guess')
+    pinned = sorted(p for p in PI_RUNTIMES.glob('*/node_modules') if (p / PI_PACKAGE).is_dir())
+    if not pinned:
+        raise ValueError('the pinned Pi runtime is not installed; install it before launching a role')
+    if local.is_symlink():
+        local.unlink()
+    local.symlink_to(pinned[-1])
+    return local
 
 
 def journal_root(conf=None):
@@ -128,6 +154,7 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
     node = shutil.which('node')
     if not node:
         raise ValueError('node is required for the Pi runtime')
+    modules = pi_modules()
     entry = PLATFORM / 'integrations/pi/role-launch.mjs'
     if not entry.is_file():
         raise ValueError('role launch entry missing from the platform checkout')
@@ -160,7 +187,7 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
                    'note': 'The index rides in context; the rest is behind the agent_memory tool'}
     result = {'version': 1, 'conversation_id': conversation_id, 'agent': conversation['agent'],
               'scope': conversation['scope'], 'cwd': cwd, 'account': attribution,
-              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'], 'memory': memory_view, 'journal': journal,
+              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'], 'memory': memory_view, 'journal': journal, 'pi_modules': str(modules),
               'argv': [str(Path(node).resolve()), str(entry)], 'environment_keys': sorted(env),
               'launch': launch, 'header': header,
               'scope_note': 'New or explicitly resumed execution; the launcher records no account equivalence and replays nothing'}

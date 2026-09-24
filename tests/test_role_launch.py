@@ -134,6 +134,34 @@ class RoleLaunch(unittest.TestCase):
             self.assertEqual(personal['journal'], str(vault))
             self.assertEqual(json.loads(env['DEV_PLATFORM_ROLE_LAUNCH'])['journalRoot'], str(vault))
 
+    def test_the_pi_package_resolves_in_a_release_that_ships_no_node_modules(self):
+        # A release excludes integrations/pi/node_modules, so a launch would die on an
+        # unresolved import. A working checkout hides that, which is how it shipped broken.
+        platform = self.root / 'release'
+        (platform / 'integrations/pi').mkdir(parents=True)
+        pinned = self.root / 'pi-runtime' / '0.87.1' / 'node_modules'
+        (pinned / role_launch.PI_PACKAGE).mkdir(parents=True)
+        with mock.patch.object(role_launch, 'PI_RUNTIMES', self.root / 'pi-runtime'):
+            linked = role_launch.pi_modules(platform)
+            self.assertTrue(linked.is_symlink())
+            self.assertEqual(linked.resolve(), pinned.resolve())
+            # Idempotent: a second call keeps the same link.
+            self.assertEqual(role_launch.pi_modules(platform), linked)
+            # A real directory holding the package is used untouched.
+            other = self.root / 'checkout'
+            (other / 'integrations/pi/node_modules' / role_launch.PI_PACKAGE).mkdir(parents=True)
+            self.assertFalse(role_launch.pi_modules(other).is_symlink())
+            # A real directory WITHOUT the package is a broken install, not something to guess at.
+            bare = self.root / 'bare'
+            (bare / 'integrations/pi/node_modules').mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'without the Pi package'):
+                role_launch.pi_modules(bare)
+        missing = self.root / 'no-runtime'
+        (missing / 'integrations/pi').mkdir(parents=True)
+        with mock.patch.object(role_launch, 'PI_RUNTIMES', self.root / 'absent'):
+            with self.assertRaisesRegex(ValueError, 'pinned Pi runtime is not installed'):
+                role_launch.pi_modules(missing)
+
     def test_resume_only_from_this_conversation_and_clean_environment(self):
         self.configure_profile()
         with self.assertRaisesRegex(ValueError, 'no native Pi session'):
