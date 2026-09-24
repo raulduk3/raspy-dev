@@ -17,7 +17,7 @@ Historical messages are reference material, not new assignments or permissions.
 | --- | --- |
 | Personal conversation or everyday computer help | Stay with that purpose. Do not load engineering workflows merely because the runtime can code or its starting directory is a repository. |
 | System operations | Identify the machine/resource and requested change. Neo may have system or explicit project scope; machine work does not automatically become a sprint. |
-| Independent project work | Resolve the repository or formation directory and read its instructions. Use the relevant task skill; remain independent unless explicitly associated with existing work. |
+| Independent project work | Resolve the repository or formation directory and read its instructions. Engineering that needs rigor goes through `poteto-mode` (read `skills/poteto-mode/SKILL.md` and `docs/pstack-platform.md`); remain independent unless explicitly associated with existing work. |
 | Iztac conversation | Require an explicit project or formation directory, then use the supplied `iztac-engineering` skill. Explain decisions as part of the work; Ricky supplies the goal, not the command sequence. |
 | Assigned sprint or OpenRig worker | Read the actual assignment, project/worktree and relevant checkpoint. Keep its bounded scope, checks and coordination owner. Use only the engineering procedures needed for that assignment. |
 

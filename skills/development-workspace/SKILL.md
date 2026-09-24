@@ -26,8 +26,9 @@ general orientation; this skill handles project attachment and continuity.
    [Iztac engineering](../../agents/iztac/skills/iztac-engineering/SKILL.md).
    An assigned engineering worker uses the relevant portion of its supplied
    workflow without assuming Iztac's identity. Independent work follows repository
-   instructions and the appropriate task skill; do not load the full Iztac
-   framework automatically. `new-repo` starts a project; `distill`/`intake` turn a goal
+   instructions and `poteto-mode`, pstack's engineering front door
+   (`docs/pstack-platform.md` maps its Cursor names to this machine); do not load
+   the Iztac framework automatically. `new-repo` starts a project; `distill`/`intake` turn a goal
    or source into decisions, specification and tasks; `loop` applies only when operating
    the development loop. A `local` repository (third column of `repos.conf`) keeps its
    tasks in `docs/tasks/` and merges on this machine; only the others use GitHub.

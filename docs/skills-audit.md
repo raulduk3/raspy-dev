@@ -224,3 +224,23 @@ action, so a client matches on what the user said rather than on the skill's nam
 3. Link the platform skills into the isolated homes.
 4. Give Iztac's Pi sessions `intake`, `loop`, `new-repo` and `distill`.
 5. Activate a release that contains this branch. Nothing here was activated or pushed.
+
+## Addendum, same day: pstack becomes the engineering method
+
+Ricky chose pstack (Lauren Tan's Cursor skills, MIT) as the engineering method, preferring her
+design to the platform's where they differ. On branch `feat/pstack-skills`:
+
+- `vendor/pstack/` holds her tree unmodified; `bin/pstack-port` builds 46 of her skills into
+  `skills/` (all but `make-bot-ui` and the `automations/benny` skills, which need Cursor
+  Automations). `docs/pstack-platform.md` maps her Cursor names to this machine and lists the steps
+  the guard hook leaves to the owner.
+- The target set above changes shape. Her `poteto-mode` is the engineering front door, with her
+  playbooks and principles; `session-entry` routes engineering to it and keeps the personal and
+  system contexts she has no concept of. The platform's own skills stay for what pstack lacks:
+  `new-repo`, `distill`, `intake` and `loop` (the local-first task ledger and workers),
+  `development-workspace`, `bounded-decisions`.
+- Iztac's condensed copies of her principles are removed; its index links her principle skills.
+- `/setup-pstack` writes `~/.config/dev-platform/pstack-models.md`, which the loop reads for its
+  workers' model and effort.
+- The day-branch model is replaced in design by her branch-per-unit model (see the map);
+  `loop.sh` is not yet changed.

@@ -28,8 +28,8 @@ try {
     results.push({agent,skills:loaded.skills.map(s=>s.name)});
   }
   const body = fs.readFileSync(path.join(skill,'SKILL.md'),'utf8');
-  const links = [...body.matchAll(/\]\((references\/[^)]+)\)/g)].map(m=>m[1]);
-  assert.equal(links.filter(p=>p.startsWith('references/principles/')).length,23);
+  const links = [...body.matchAll(/\]\(((?:references\/|\.\.\/\.\.\/\.\.\/\.\.\/skills\/principle-)[^)]+)\)/g)].map(m=>m[1]);
+  assert.equal(links.filter(p=>p.includes('/skills/principle-')).length,23);
   for (const relative of links) assert(fs.statSync(path.join(skill,relative)).isFile(),relative);
   console.log(JSON.stringify({passed:true,results,referenceFiles:links.length,
     scope:'Actual Pi resource loader with isolated fixtures; no inference, authentication, or production launcher tested.'},null,2));

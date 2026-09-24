@@ -142,6 +142,7 @@ folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
 | Where skills come from | What |
 | --- | --- |
 | The platform release, `skills/` | `bounded-decisions`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `session-entry`, `spec-lint`; `deploy-verify` and `staging-census` are marked deprecated (see `docs/skills-audit.md`) |
+| pstack (`vendor/pstack`, ported by `bin/pstack-port`) | `poteto-mode`, its routed skills and the 23 `principle-*` skills; see `docs/pstack-platform.md` |
 | Iztac's own resources | `iztac-engineering`, loaded only into Iztac's Pi sessions |
 | OpenRig | `openrig-skills`, vendored into the default Claude home and the shared folder |
 | The clients themselves | Claude desktop's synced skills; Codex's own |
