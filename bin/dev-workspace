@@ -11,6 +11,92 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = "0.5.14"
 NODE = "node-v24.14.0-darwin-arm64"
+ACCOUNTS = ("anthropic-apple", "anthropic-gmail", "openai-apple", "openai-gmail")
+PROVIDER = {"codex": "openai", "claude": "anthropic"}
+
+
+def account_runtime(account):
+    return "claude" if account.startswith("anthropic-") else "codex"
+
+
+def render_openrig_spec(name, runtime, cwd, config_home):
+    """Render a minimal per-account RigSpec as YAML text (no PyYAML dependency;
+    the shape mirrors integrations/openrig/codex.yaml and claude.yaml exactly).
+
+    Uses agent_ref "path:<absolute>" rather than "local:agents/control": the
+    installed rig CLI resolves a "local:" ref relative to the spec file's own
+    directory (its own error hint says so, and the daemon's agent-resolver
+    confirms it: resolveRefToAbsPath joins "local:" refs against baseDir but
+    returns a "path:" ref's remainder unchanged as an absolute path). This
+    spec is written into a state directory, not beside
+    integrations/openrig/agents, so "local:" would not resolve; "path:" does.
+    """
+    agent_ref = "path:" + str(ROOT / "integrations/openrig/agents/control")
+    lines = [
+        'version: "0.2"',
+        f"name: {name}",
+        "summary: Owner-directed development control; the existing loop remains the execution authority.",
+        "pods:",
+        "  - id: development",
+        "    label: Development",
+        "    members:",
+        "      - id: control",
+        "        label: Coding control",
+        f"        agent_ref: {json.dumps(agent_ref)}",
+        "        profile: default",
+        f"        runtime: {runtime}",
+        f"        cwd: {json.dumps(str(cwd))}",
+    ]
+    if config_home:
+        lines.append(f"        config_home: {json.dumps(config_home)}")
+    lines += ["    edges: []", "edges: []"]
+    return "\n".join(lines) + "\n"
+
+
+def write_generated_spec(name, runtime, cwd, config_home):
+    """Write the generated per-account spec into a state directory: not a
+    product repository, and not committed noise. A temp file was considered
+    and rejected, because OpenRig may re-read the spec path later for a
+    successor launch, restore or resume, by which time a temp file would be
+    gone; a persistent state directory survives that. This mirrors
+    integrations/openrig/README.md's own ~/.local/state/dev-platform
+    convention for generated, non-product state.
+    """
+    state_root = Path(os.environ.get("DEV_WORKSPACE_STATE_DIR",
+                                     Path.home() / ".local/state/dev-platform/openrig"))
+    state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(state_root, 0o700)
+    spec_path = state_root / f"{name}.yaml"
+    fd = os.open(spec_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        stream.write(render_openrig_spec(name, runtime, cwd, config_home))
+    return spec_path
+
+
+def resolve_account_plan(account, runtime, cwd, env, parser):
+    """Resolve --account through the account service and refuse early (before
+    touching rig inventory or writing any spec) on a disallowed plan, quoting
+    the service's own reason rather than inventing one.
+    """
+    service = Path(os.environ.get("DEV_WORKSPACE_ACCOUNT_SERVICE", ROOT / "bin/ai-environment"))
+    command = [str(service)]
+    registry = os.environ.get("DEV_WORKSPACE_ACCOUNTS_REGISTRY")
+    if registry:
+        command += ["--registry", registry]
+    command += ["plan", "--client", "openrig", "--provider", PROVIDER[runtime],
+                "--preferred-account", account, "--allow-unknown-quota", "--cwd", str(cwd)]
+    try:
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=45)
+    except subprocess.TimeoutExpired:
+        parser.exit(2, "dev-workspace: account plan timed out; account service unavailable.\n")
+    try:
+        plan = json.loads(result.stdout)
+    except ValueError:
+        plan = None
+    if not plan or not plan.get("launch_allowed"):
+        reason = (plan or {}).get("reason") or result.stderr.strip() or "account plan unavailable"
+        parser.exit(2, f"dev-workspace: account plan refused: {reason}\n")
+    return plan
 
 
 def main():
@@ -19,6 +105,9 @@ def main():
     parser.add_argument("runtime", nargs="?", choices=["codex", "claude"])
     parser.add_argument("--cwd", type=Path, help="Explicit working directory for a new control seat")
     parser.add_argument("--shared", action="store_true", help="Attach an already configured kernel terminal; never boot one")
+    parser.add_argument("--account", choices=ACCOUNTS,
+                        help="Resolve and pin one native account for this seat through the account "
+                             "service; renders a distinct per-account rig so two accounts never collide")
     args = parser.parse_args()
     if args.action != "open" and (not args.runtime or not args.cwd):
         parser.error("plan/start require a runtime and --cwd")
@@ -28,6 +117,10 @@ def main():
         parser.error("--shared applies only to open")
     if args.cwd and not args.cwd.is_dir():
         parser.error("--cwd must be an existing directory")
+    if args.account and args.action not in ("plan", "start"):
+        parser.error("--account applies only to plan/start")
+    if args.account and account_runtime(args.account) != args.runtime:
+        parser.error(f"--account {args.account} does not match runtime {args.runtime}")
 
     install = Path(os.environ.get("DEV_WORKSPACE_RUNTIME", Path.home() / ".local/share/dev-platform/openrig-runtime"))
     rig = install / "app/node_modules/.bin/rig"
@@ -61,7 +154,16 @@ def main():
     if args.action == "open":
         os.execve(str(rig), [str(rig), "tui", *(["--shared"] if args.shared else [])], env)
 
-    name = f"development-{args.runtime}"
+    account_plan = None
+    if args.account:
+        # Resolved unconditionally, even on the reuse path below: with a
+        # named account this is identity revalidation, not reselection, and
+        # it must refuse before any inventory lookup or spec is written.
+        account_plan = resolve_account_plan(args.account, args.runtime, args.cwd.resolve(), env, parser)
+        name = f"development-{args.runtime}-{args.account}"
+    else:
+        name = f"development-{args.runtime}"
+
     inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
     if isinstance(inventory, dict):
         if inventory.get("truncated"):
@@ -94,7 +196,12 @@ def main():
                 if not permitted:
                     parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
                                    "directory, not a professional repository checkout.\n")
-        command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
+        if account_plan is not None:
+            member = account_plan["member"]
+            spec_path = write_generated_spec(name, member["runtime"], member["cwd"], member.get("config_home"))
+            command = ["up", str(spec_path), "--cwd", str(args.cwd.resolve())]
+        else:
+            command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
     run(*command, "--plan")
     if args.action == "start":
         # No --yes: upstream retains permission/trust decisions. Starting the

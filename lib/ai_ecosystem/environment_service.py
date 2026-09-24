@@ -151,6 +151,12 @@ def host_observations(data):
     return rows
 
 
+# OpenRig 0.5.14 (patched for per-seat config_home) names runtimes "codex" and
+# "claude-code"; this service's own runtime names stay "codex"/"claude" so this
+# is the one place that translates for the RigSpec member fragment.
+OPENRIG_RUNTIME = {'codex': 'codex', 'claude': 'claude-code'}
+
+
 def host_plan(rows, data, client, provider, cwd, preferred=None, allow_unknown=False):
     runtime = 'codex' if provider == 'openai' else 'claude'
     result = dict(version=1, execution_kind='host', client=client, provider=provider,
@@ -173,16 +179,35 @@ def host_plan(rows, data, client, provider, cwd, preferred=None, allow_unknown=F
     # Checked again by the native launcher immediately before exec.
     accounts.configuration_check(name, home, cwd)
     key = 'CODEX_HOME' if runtime == 'codex' else 'CLAUDE_CONFIG_DIR'
+    native_default = bool(binding.get('native_default'))
+    expected_email = binding.get('expected_email')
+    # Doubles as the OpenRig eligibility gate below: a binding that never
+    # recorded an expected identity cannot be fingerprinted for resume/fork
+    # revalidation, so it is not "verified and eligible" for a seat.
+    identity_ref = hashlib.sha256(expected_email.casefold().encode()).hexdigest() if expected_email else None
     result.update(selected=name, readiness=selected['state'], capabilities=selected['capabilities'],
                   quota=selected['quota'], quota_observed_at=selected['observed_at'],
                   profile={'ref': name + ':' + runtime, 'client': runtime, 'home': str(home),
-                           'identity_ref': hashlib.sha256(binding.get('expected_email','').casefold().encode()).hexdigest() if binding.get('expected_email') else None,
-                           'environment': {} if binding.get('native_default') else {key: str(home)},
-                           'native_default': bool(binding.get('native_default'))},
-                  history={'owner': runtime, 'profile_home': str(home), 'copy_transcripts': False},
-                  launch_allowed=client == runtime,
-                  reason='native profile preflight passed' if client == runtime else
-                  'OpenRig adapter profile propagation and resume integration pending')
+                           'identity_ref': identity_ref,
+                           'environment': {} if native_default else {key: str(home)},
+                           'native_default': native_default},
+                  history={'owner': runtime, 'profile_home': str(home), 'copy_transcripts': False})
+    if client == runtime:
+        result.update(launch_allowed=True, reason='native profile preflight passed')
+        return result
+    # Only 'openrig' remains here; 'pi' and provider/client mismatches already returned above.
+    if identity_ref is None:
+        result.update(reason='OpenRig launch requires an enrolled account binding with a verified '
+                             'identity; an unenrolled binding cannot be revalidated on resume or fork')
+        return result
+    member = {'runtime': OPENRIG_RUNTIME[runtime], 'cwd': str(cwd)}
+    if not native_default:
+        # A native-default binding must emit no config_home: the seat uses
+        # the daemon's own default home, not a profile override.
+        member['config_home'] = str(home)
+        result['config_home'] = str(home)
+    result.update(launch_allowed=True, member=member,
+                  reason='native profile preflight passed; OpenRig seat carries this account binding')
     return result
 
 
@@ -296,6 +321,8 @@ def main(argv=None):
                 raise ValueError('Enroll each native profile with ai-account bind after its own native sign-in')
             data = accounts.load(args.registry)
             if args.command in ('plan', 'run'):
+                if args.command == 'run' and args.client == 'openrig':
+                    raise ValueError('OpenRig seats are launched with dev-workspace --account, not ai-environment run')
                 if args.command == 'run' and not args.preferred_account and any(
                     argument.split('=',1)[0] in ('resume','fork','--resume','-r','--continue','--fork-session')
                     for argument in args.arguments):

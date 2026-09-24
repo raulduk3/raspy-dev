@@ -95,3 +95,42 @@ ai-environment --execution-kind container --root /absolute/account-environments 
 
 Host failures never fall back to Docker. Existing container credentials and
 histories remain untouched. Profile separation is not an OS security sandbox.
+
+## OpenRig consumption contract
+
+`ai-environment plan --client openrig` now returns a launch-allowed plan once
+the OpenRig daemon can carry a per-seat profile: the same selection, quota and
+`profile` fields as a direct `codex`/`claude` plan, plus a `member` object
+(`{runtime, cwd}`, with `config_home` added only when applicable) that is a
+ready-to-embed RigSpec pod member fragment, so a caller does not hand-build
+YAML. `runtime` in `member` is OpenRig's own runtime name (`codex` or
+`claude-code`), not this service's `codex`/`claude`.
+
+`config_home` — both the top-level plan field and the one inside `member` — is
+the absolute profile home, and is **omitted entirely** (never emitted as
+`null`) for a `native_default` binding: that seat uses the daemon's own
+default home, matching `profile.environment` being empty for the same
+binding. An isolated (non-`native_default`) binding always emits an absolute
+`config_home` equal to `profile.home`.
+
+OpenRig eligibility additionally requires the selected binding to have
+recorded an `expected_email` at bind time (i.e. `profile.identity_ref` is not
+`null`). This is not a new quota/identity check — `ai-account bind` always
+records `expected_email` — but it means an OpenRig plan is refused for a
+binding that was never actually enrolled, because such a binding has nothing
+for resume or fork to revalidate against later.
+
+Resume and fork are not a new selection: the same bound account and
+`config_home` used at launch are reused, not re-derived from current quota.
+A consumer that needs to resume or fork a seat should pass that seat's
+original `--preferred-account` (as `ai-environment run` already requires for
+resume/fork today) rather than calling `plan` without it and letting quota
+pick a possibly different account.
+
+`ai-environment run --client openrig` is refused unconditionally: OpenRig
+seats are not launched by replacing this process with a bare native client
+the way a direct `codex`/`claude` run is. The seat launcher is
+`dev-workspace start <runtime> --account <account> --cwd <path>` (see
+`integrations/openrig/README.md`), which resolves the plan above, refuses on
+the service's own reason when it is not allowed, and renders a distinct
+per-account rig from the returned `member` fragment.

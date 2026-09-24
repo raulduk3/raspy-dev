@@ -21,6 +21,12 @@ CONFLICTS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS
              'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_FEDERATION_RULE_ID', 'CLAUDE_CODE_OAUTH_TOKEN',
              'CLAUDE_CODE_API_KEY_HELPER_TTL_MS', 'CLAUDE_CODE_SESSION_ACCESS_TOKEN',
              'CLAUDE_SECURESTORAGE_CONFIG_DIR')
+# Shared with prepare_login()'s Codex config.toml safety check: any of these words
+# appearing in a native config file means a routing/authentication override is
+# present, regardless of which check found it.
+FORBIDDEN_OVERRIDES = ('apiKeyHelper', 'ANTHROPIC_', 'CLAUDE_CODE_USE_', 'CLAUDE_CODE_OAUTH_TOKEN',
+                       'model_provider', 'openai_base_url', 'base_url', 'env_key', 'http_headers',
+                       'forced_login_method', 'forceLoginMethod', 'experimental_bearer_token')
 
 
 def now():
@@ -82,11 +88,8 @@ def configuration_check(account, home, cwd):
     for directory in [root, *root.parents]:
         paths.extend((directory / '.codex/config.toml', directory / '.claude/settings.json',
                       directory / '.claude/settings.local.json'))
-    forbidden = ('apiKeyHelper', 'ANTHROPIC_', 'CLAUDE_CODE_USE_', 'CLAUDE_CODE_OAUTH_TOKEN',
-                 'model_provider', 'openai_base_url', 'base_url', 'env_key', 'http_headers',
-                 'forced_login_method', 'forceLoginMethod', 'experimental_bearer_token')
     for path in paths:
-        if path.is_file() and any(word in path.read_text() for word in forbidden):
+        if path.is_file() and any(word in path.read_text() for word in FORBIDDEN_OVERRIDES):
             raise ValueError('native configuration has authentication/provider overrides; review it before using a subscription binding')
 
 
@@ -245,13 +248,23 @@ def prepare_login(account, root):
     os.chmod(home, 0o700)
     if runtime(account) == 'codex':
         config = home / 'config.toml'
-        expected = 'cli_auth_credentials_store = "file"\n'
-        if config.is_symlink() or (config.exists() and config.read_text() != expected):
+        expected_line = 'cli_auth_credentials_store = "file"'
+        if config.is_symlink():
             raise ValueError('existing profile configuration differs; inspect before preparing login')
-        if not config.exists():
+        if config.exists():
+            # A concurrent tool (e.g. profile provisioning, or OpenRig's managed [hooks]
+            # block) may have appended to this file. Accept it as long as the required
+            # credentials-store line is present verbatim and no authentication/provider
+            # override has been introduced; refuse anything else unchanged.
+            text = config.read_text()
+            has_store_line = expected_line in text.splitlines()
+            has_override = any(word in text for word in FORBIDDEN_OVERRIDES)
+            if not has_store_line or has_override:
+                raise ValueError('existing profile configuration differs; inspect before preparing login')
+        else:
             fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, 'w') as stream:
-                stream.write(expected)
+                stream.write(expected_line + '\n')
     return {'account': account, 'native_home': str(home),
             'environment_key': 'CODEX_HOME' if runtime(account) == 'codex' else 'CLAUDE_CONFIG_DIR',
             'native_command': ['codex','login'] if runtime(account) == 'codex' else ['claude','auth','login','--claudeai'],
