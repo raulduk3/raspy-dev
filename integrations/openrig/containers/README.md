@@ -3,8 +3,8 @@
 Candidate deployment for four account-pinned OpenRig hosts. One pinned image, four instances, no credential swapping or proxy. Account environments own execution; project/conversation records own the work. **Image build and two OpenAI environment runtime checks passed on Docker Desktop (Linux arm64). Native account login, worker messaging and recovery remain unverified.**
 
 The source image now also includes Pi 0.87.1. The separate candidate tag
-`dev-platform-account-env:pi-0.87.1` built successfully and passed all eight
-offline checks at source revision `7bd58d5`. It has not replaced the running
+`dev-platform-account-env:pi-0.87.1` built successfully and passed all ten
+offline checks at source revision `99bf784`. It has not replaced the running
 account environments: their earlier checks cover the image without Pi. The
 runtime checker now requires Pi and will reject an older image. Do not recreate
 an environment during an active login or worker session simply to satisfy this
@@ -47,8 +47,11 @@ The checker exports committed HEAD, resolves the image to an immutable ID, and
 runs the real role, history, session and PTY checks as the image's non-root user.
 Its disposable containers have networking disabled, a read-only source mount and
 temporary storage; they receive no account homes or control tokens and start no
-OpenRig daemon. This checks Linux image compatibility, not authentication,
-host-bind-mount conversation locking, account handover or production launch.
+OpenRig daemon. This checks Linux image compatibility and native fixture transcript recovery
+across two containers using the same host bind mount. It verifies the same native
+session ID, original messages, unchanged transcript bytes and rejection of a
+different account binding. It does not verify authentication, account handover
+or production launch. Shared writer locking is checked separately below.
 
 Check the shared-conversation lock separately:
 

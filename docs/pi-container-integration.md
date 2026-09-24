@@ -10,8 +10,8 @@ evidence that the containers are running or that authentication is complete.
 The candidate image uses Node 24.14.0. Pinned Pi 0.87.1 requires Node >=22.19.0,
 so the declared Node versions are compatible. The candidate image currently
 includes a source change to install Pi 0.87.1 alongside OpenRig, Claude Code and
-Codex. The separate Pi candidate image built and passed eight offline Linux checks at
-source revision `7bd58d5`, including native PTY startup/exit and role/session
+Codex. The separate Pi candidate image built and passed ten offline Linux checks at
+source revision `99bf784`, including native PTY startup/exit and role/session
 behavior. It has not been deployed to the account environments. These checks
 used committed source mounted read-only, no account homes and no network. The image does not yet include the
 dev-platform role resources. Its current mounts expose the account's persistent
@@ -87,7 +87,8 @@ This capability placement remains a design/acceptance item, not a settled claim.
 The Linux image offline PTY and lifecycle checks now pass. The separate
 `check-conversation-mount.py` check also proves concurrent-writer refusal and
 lock recovery after SIGKILL across disposable containers on a real Docker Desktop
-bind mount, with unchanged fixture data and no lock-file replacement. Native Pi
-transcript recovery across recreated account containers and authenticated
-cross-account handover remain unverified. Leave authentication/approval steps pending while
+bind mount, with unchanged fixture data and no lock-file replacement. Native fixture transcript recovery also passes across two disposable containers
+sharing a host mount: the original ID, messages and bytes are preserved, and a
+different account binding is refused. Recovery of real authenticated account
+sessions and cross-account handover remain unverified. Leave authentication/approval steps pending while
 the owner sleeps. Do not build or launch around another task's sandbox denial.
