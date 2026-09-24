@@ -87,3 +87,18 @@ and handle native TUI new/resume/fork/import transitions without losing the role
 and conversation bounds. Authenticated inference, terminal interaction and
 concurrent-writer/recovery acceptance remain open. Do not expose an unrestricted
 native TUI around this factory and assume those transitions are already governed.
+
+`lib/ai_ecosystem/pi_launch.py::exec_conversation` provides the POSIX writer
+boundary for that launcher. A dedicated launch process acquires a nonblocking
+`flock` on the conversation's persistent `.pi-writer.lock`, then replaces itself
+with the selected absolute runtime executable. The descriptor survives exec;
+there is no supervisor daemon or PID ledger. Never delete the lock file to
+recover: process termination releases the OS lock. `DEV_PLATFORM_PI_LOCK_FD`
+identifies the descriptor for the launched runtime; keep it open for its lifetime.
+
+`tests/test_pi_launch.py` checks real Python-to-Node exec, competing launch
+rejection, normal exit, forced-crash recovery and failed-exec cleanup. This
+primitive is not yet wired into a public terminal command. Direct SDK callers
+can still bypass it, so the session factory alone does not guarantee exclusive
+ownership. The lock is cooperative and local to a filesystem that supports POSIX
+flock; it is not a distributed coordination protocol for future remote swarms.
