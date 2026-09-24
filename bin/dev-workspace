@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Open the native development control surface; launch a seat only on request."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parent.parent
+VERSION = "0.5.14"
+NODE = "node-v24.14.0-darwin-arm64"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", nargs="?", default="open", choices=["open", "plan", "start"])
+    parser.add_argument("runtime", nargs="?", choices=["codex", "claude"])
+    parser.add_argument("--cwd", type=Path, help="Explicit working directory for a new control seat")
+    parser.add_argument("--shared", action="store_true", help="Attach an already configured kernel terminal; never boot one")
+    args = parser.parse_args()
+    if args.action != "open" and (not args.runtime or not args.cwd):
+        parser.error("plan/start require a runtime and --cwd")
+    if args.action == "open" and (args.runtime or args.cwd):
+        parser.error("open does not select or launch a coding seat")
+    if args.shared and args.action != "open":
+        parser.error("--shared applies only to open")
+    if args.cwd and not args.cwd.is_dir():
+        parser.error("--cwd must be an existing directory")
+
+    install = Path(os.environ.get("DEV_WORKSPACE_RUNTIME", Path.home() / ".local/share/dev-platform/openrig-runtime"))
+    rig = install / "app/node_modules/.bin/rig"
+    node_dir = install / NODE / "bin"
+    if not rig.is_file() or not (node_dir / "node").is_file():
+        parser.exit(2, "Pinned OpenRig runtime missing; see integrations/openrig/README.md.\n")
+    env = os.environ.copy()
+    # A caller may itself be an OpenClaw-managed Codex process. Do not make its
+    # managed home the auth/configuration store for a native standalone seat.
+    env.pop("CODEX_HOME", None)
+    env.pop("CODEX_THREAD_ID", None)
+    env["PATH"] = os.pathsep.join([str(node_dir), str(ROOT / "bin"), env.get("PATH", "")])
+
+    def run(*parts, capture=False):
+        return subprocess.run([str(rig), *parts], env=env, check=True,
+                              text=True, stdout=subprocess.PIPE if capture else None)
+
+    installed_version = run("--version", capture=True).stdout.strip().split()
+    if not installed_version or installed_version[0] != VERSION:
+        parser.exit(2, f"Expected OpenRig {VERSION}; review the integration before upgrading.\n")
+    # This pinned version has no machine-readable daemon-status command and
+    # returns exit 0 even for stopped/unverified states. Fail closed on unknown.
+    status = run("daemon", "status", capture=True).stdout.strip()
+    if status == "Daemon stopped":
+        if args.action == "plan":
+            parser.exit(2, "Daemon is stopped; open the workspace before requesting a native plan.\n")
+        run("daemon", "start", "--no-kernel")
+    elif not status.startswith("Daemon running on port ") or "UNHEALTHY" in status:
+        parser.exit(2, f"Not starting a second daemon: {status}\nInspect rig daemon status.\n")
+
+    if args.action == "open":
+        os.execve(str(rig), [str(rig), "tui", *(["--shared"] if args.shared else [])], env)
+
+    name = f"development-{args.runtime}"
+    inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
+    if isinstance(inventory, dict):
+        if inventory.get("truncated"):
+            parser.exit(2, "Rig inventory is truncated; inspect it before starting another seat.\n")
+        inventory = inventory["entries"]
+    matches = [r for r in inventory if (r.get("rigName") or r.get("name")) == name]
+    if len(matches) > 1:
+        parser.exit(2, f"Multiple {name} rigs found; resolve their ownership before launch.\n")
+    if matches:
+        if matches[0].get("archivedAt") or matches[0].get("isArchived"):
+            parser.exit(2, f"{name} is archived; explicitly unarchive it before reuse.\n")
+        command = ["up", name, "--existing"]
+        print(f"Reusing {name}; its persisted session keeps its original task and working directory.", flush=True)
+    else:
+        if args.action == "start":
+            # Native boot writes managed context into cwd. Never introduce it into
+            # a professional checkout; use an external project-world instead.
+            def common_dir(path):
+                result = subprocess.run(["git", "-C", str(path), "rev-parse",
+                                         "--path-format=absolute", "--git-common-dir"],
+                                        env=env, text=True, capture_output=True)
+                return Path(result.stdout.strip()).resolve() if result.returncode == 0 else None
+            identity = common_dir(args.cwd)
+            if identity is not None:
+                personal = Path(os.environ.get("DEV_PLATFORM_PERSONAL",
+                                               Path.home() / ".config/dev-platform/personal.conf"))
+                entries = personal.read_text().splitlines() if personal.is_file() else []
+                permitted = any(common_dir(Path(line.strip()).expanduser()) == identity
+                                for line in entries if line.strip() and not line.lstrip().startswith("#"))
+                if not permitted:
+                    parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
+                                   "directory, not a professional repository checkout.\n")
+        command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
+    run(*command, "--plan")
+    if args.action == "start":
+        # No --yes: upstream retains permission/trust decisions. Starting the
+        # control seat does not dispatch the development loop's workers.
+        run(*command)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError) as exc:
+        print(f"dev-workspace: {exc}", file=sys.stderr)
+        sys.exit(1)

@@ -1,10 +1,25 @@
 ---
 name: morning-brief
-description: Produce the morning brief in the fixed format: pull requests awaiting the owner, open decisions, CI and Testing health, new intake since yes…
+description: Produce the morning brief in the fixed format: pull requests awaiting the owner, open decisions, CI and testing health, the last deploy-log row, new intake since yesterday, the last loop cycle, then today's loop plan. Read-only; delivered to the owner, never posted.
 ---
 
 # morning-brief
 
-Produce the morning brief in the fixed format: pull requests awaiting the owner, open decisions, CI and Testing health, new intake since yesterday, and the last loop cycle summary. Reads the owner's repositories through the bot identity and any read-only repository through the owner's login on the owner's machine. Delivered to the owner; never posted to GitHub. Runs once per weekday morning, America/Chicago.
+## Setup, once per machine
 
-This is the contract. The procedure is filled in when the skill is first exercised, and it never widens beyond this paragraph without a decision.
+`~/.config/dev-platform/brief.conf` names the repositories, the CI branch, the deploy-log path,
+the testing host and compose project (read over one fixed `ssh` command), the production health
+URL, and the note folders scanned for new intake. The scripts read nothing else.
+
+## Procedure
+
+1. `scripts/brief.sh` prints the brief. `--no-vps` skips the host probe.
+2. `scripts/morning.sh` prints the brief followed by today's loop plan (`loop/scripts/loop.sh plan`)
+   and writes the brief under `LOOP_STATE_DIR/<date>/` and the plan under the repository's ledger
+   directory, `LOOP_STATE_DIR/<owner__repo>/<date>/`. The `loop:` section reads that ledger: the
+   open day, the steer, the newest CYCLE report. Nothing is read from or written to an issue.
+3. Schedule `morning.sh` as a deterministic command on weekday mornings, delivered to the owner.
+   It needs no model.
+
+Format is fixed: `BRIEF <date>`, then `prs:`, `decisions:`, `health:`, `deploy log:`,
+`intake (24h):`, `loop:`, then `PLAN <date>`.

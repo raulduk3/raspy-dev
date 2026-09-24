@@ -19,6 +19,24 @@ input="$(cat)"
 command="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("tool_input",{}).get("command",""))' 2>/dev/null || true)"
 [ -n "$command" ] || exit 0
 
+cwd="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cwd",""))' 2>/dev/null || true)"
+
+# The owner's own repositories; every other repository is professional.
+repository_identity() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] && (cd "$common" && pwd -P)
+}
+personal=0
+personal_conf="${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}"
+if [ -n "$cwd" ] && [ -f "$personal_conf" ] && repo_identity="$(repository_identity "$cwd")"; then
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    entry="$(repository_identity "${line/#\~/$HOME}")" || continue
+    if [ "$repo_identity" = "$entry" ]; then personal=1; break; fi
+  done < "$personal_conf"
+fi
+
 refuse() {
   printf 'dev-platform guard: %s\n' "$1" >&2
   exit 2
@@ -26,6 +44,15 @@ refuse() {
 
 # Normalize whitespace for matching; keep the original for messages.
 flat="$(printf '%s' "$command" | tr '\n' ' ' | tr -s ' ')"
+
+# Match git's common global options too; do not weaken rules for personal repositories.
+flat="$(printf '%s' "$flat" | python3 -c '
+import re,sys
+s=sys.stdin.read()
+arg=r"(?:\"[^\"]*\"|\x27[^\x27]*\x27|[^ ;&|]+)"
+s=re.sub(r"\bgit\s+(?:(?:-C|-c|--git-dir|--work-tree)\s+"+arg+r"\s+)+", "git ", s)
+print(s)
+')"
 
 # git push to a protected branch, in any form.
 if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +push\b'; then
@@ -41,13 +68,28 @@ if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +push\b'; then
   fi
 fi
 
+# Professional repositories: no tool or model attribution reaches the ledger.
+if [ "$personal" != "1" ]; then
+  ghost="professional repository: no tool or model attribution reaches the ledger"
+  attribution='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|(^|[^a-z])generated with'
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(-C +[^ ]+ +)?commit\b' && printf '%s' "$flat" | grep -Eiq "$attribution"; then
+    refuse "$ghost (commit trailer or generated-with line)"
+  fi
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)gh +(pr +(create|edit|comment)|issue +(create|comment|edit))\b' && printf '%s' "$flat" | grep -Eiq "$attribution"; then
+    refuse "$ghost (pull request or issue text)"
+  fi
+  if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(-C +[^ ]+ +)?push[^;&|]*[ :](refs/heads/)?(claude|codex|copilot)/'; then
+    refuse "$ghost (tool-named branch)"
+  fi
+fi
+
 # History rewrites of shared commits.
 if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(rebase|filter-branch|reset +--hard|commit +--amend|commit +[^;&|]*--amend)\b'; then
   refuse "history rewrite is refused (rebase, reset --hard, commit --amend, filter-branch)"
 fi
 
 # Merges into protected branches and merging pull requests.
-if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(checkout|switch) +(develop|main)\b *[;&|] *git +merge\b'; then
+if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +(checkout|switch) +(develop|main)\b *[;&|]+ *git +merge\b'; then
   refuse "merging into develop or main is refused; the owner merges"
 fi
 if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)gh +pr +(merge|ready|review +[^;&|]*--approve)\b'; then
