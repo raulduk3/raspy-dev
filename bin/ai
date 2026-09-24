@@ -466,8 +466,21 @@ def seat_state(seat):
 
 
 def team_project(team):
-    """A team belongs to one project: iztac-<project>. Other teams have none."""
-    return next((p for p in catalog() if team_name(p) == team), None)
+    """A team belongs to one project. Its engagement folder records the repository, which
+    survives renaming the checkout; a team without that record matches by name."""
+    marker = ENGAGEMENTS / team.removeprefix("iztac-") / "project"
+    repo = marker.read_text().strip() if marker.is_file() else None
+    projects = catalog()
+    return (next((p for p in projects if repo and p["repo"] == repo), None)
+            or next((p for p in projects if team_name(p) == team), None))
+
+
+def team_for(project):
+    """The project's team: the one whose engagement folder records this repository, else by name."""
+    for marker in sorted(ENGAGEMENTS.glob("*/project")) if project["repo"] else []:
+        if marker.read_text().strip() == project["repo"]:
+            return "iztac-" + marker.parent.name
+    return team_name(project)
 
 
 def teams_menu():
@@ -486,7 +499,7 @@ def teams_menu():
 
 
 def project_team(project):
-    team = team_name(project)
+    team = team_for(project)
     if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
         folder = ENGAGEMENTS / slug(name(project))
         print(f"\n{name(project)} has no team yet. Starting one opens a control seat and a Codex overseer.\n"
@@ -494,6 +507,8 @@ def project_team(project):
         if not confirm("Start it?"):
             return
         folder.mkdir(parents=True, exist_ok=True)
+        if project["repo"]:
+            (folder / "project").write_text(project["repo"] + "\n")
         if run(tool("dev-workspace") + ["start", "iztac", "--cwd", folder, "--rig", team]) != 0 and not DRY:
             return
     team_menu(team, project)
@@ -696,7 +711,7 @@ def worker_seat(project, team, action):
 # Loop -----------------------------------------------------------------------------------
 
 def loop_menu(project):
-    team = team_name(project)
+    team = team_for(project)
     verbs = [("Status", "status"), ("Plan the day", "plan"), ("Start the day", "start"),
              ("Dispatch workers in the background", "go"),
              (f"Dispatch workers as seats in {team}", "seats"),

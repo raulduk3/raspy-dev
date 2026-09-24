@@ -113,6 +113,18 @@ class Menu(unittest.TestCase):
             declined = self.drive(self.menu.project_team, 'n', project=self.project)
         self.assertEqual(self.runs(declined), [])
 
+    def test_a_team_follows_its_repository_when_the_checkout_is_renamed(self):
+        with mock.patch.object(self.menu, 'rigs', return_value=[]), \
+                mock.patch.object(self.menu, 'seats', return_value=[]):
+            self.drive(self.menu.project_team, 'y', '', project=self.project)
+        self.assertEqual((self.root / 'engagements/research-agent/project').read_text(), 'owner/repo\n')
+        renamed = dict(self.project, root=str(self.root / 'renamed-checkout'))
+        with mock.patch.object(self.menu, 'catalog', return_value=[renamed]):
+            self.assertEqual(self.menu.team_for(renamed), 'iztac-research-agent')
+            self.assertEqual(self.menu.team_project('iztac-research-agent'), renamed)
+        other = dict(self.project, repo='owner/other', root=str(self.root / 'other'))
+        self.assertEqual(self.menu.team_for(other), 'iztac-other')
+
     def test_team_seats_attach_relaunch_and_stop(self):
         seats = [{'rigId': 'R1', 'logicalId': 'control.lead', 'runtime': 'claude-code', 'sessionStatus': 'running',
                   'lifecycleState': 'attention_required',
