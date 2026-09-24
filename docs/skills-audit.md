@@ -186,8 +186,8 @@ action, so a client matches on what the user said rather than on the skill's nam
 | `loop` | Run a repository's development loop: start a day, dispatch headless workers or OpenRig worker seats on ready tasks, review and fold worker branches, and close the day with a local merge or one pull request. Also lists and writes local task files. Use for "run the loop", "start the team", "fold", "close the day". |
 | `spec-lint` | Check a repository's specification (`docs/spec/`) against its conventions before a specification change merges: trace comments, status markers that cite an existing task, decision or issue, lock markers where used, no people or tools named. Reports findings; edits nothing. |
 | `bounded-decisions` | (unchanged) |
-| `deploy-verify` | Deprecated: project-specific to one Testing host; do not use unless that project asks for it by name. |
-| `staging-census` | Deprecated: project-specific to one Testing host; do not use unless that project asks for it by name. |
+| `deploy-verify` | Deprecated: project-specific to one Testing host and its deploy log. Do not load unless that project names this skill. |
+| `staging-census` | Deprecated: project-specific to one Testing host and its deploy log. Do not load unless that project names this skill. |
 
 ## How each skill reaches each runtime
 
@@ -208,6 +208,11 @@ action, so a client matches on what the user said rather than on the skill's nam
 - `new-repo` rewritten as a procedure; `runbooks/new-repo.md` brought up to date.
 - `loop`, `spec-lint`, `development-workspace` descriptions and small body updates.
 - `deploy-verify`, `staging-census` marked deprecated.
+- Verified end to end in a sandbox: `new-repo --register --personal`, then `dev-loop tasks new`
+  twice on a planning branch, `tasks check`, a local merge, `tasks` and `plan` (selects #1, holds
+  #2 on its dependency).
+- Small follow-up, not done: `loop-sense.sh` still prints "review queue (owner, on GitHub)" in a
+  local repository's PLAN.
 - Spec and decision templates no longer say an undecided proposal "is a GitHub issue".
 - `docs/how-it-connects.md` skills table updated.
 

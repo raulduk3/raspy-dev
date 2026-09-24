@@ -141,15 +141,15 @@ folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
 
 | Where skills come from | What |
 | --- | --- |
-| The platform release, `skills/` | `bounded-decisions`, `deploy-verify`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `session-entry`, `spec-lint`, `staging-census` |
+| The platform release, `skills/` | `bounded-decisions`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `session-entry`, `spec-lint`; `deploy-verify` and `staging-census` are marked deprecated (see `docs/skills-audit.md`) |
 | Iztac's own resources | `iztac-engineering`, loaded only into Iztac's Pi sessions |
 | OpenRig | `openrig-skills`, vendored into the default Claude home and the shared folder |
 | The clients themselves | Claude desktop's synced skills; Codex's own |
 
 | Runs as | Platform skills it sees |
 | --- | --- |
-| `anthropic-gmail` (`~/.claude`) | All ten |
-| `openai-apple` (`~/.codex`) | All ten |
+| `anthropic-gmail` (`~/.claude`) | All of them |
+| `openai-apple` (`~/.codex`) | All of them |
 | `anthropic-apple` (isolated) | None. Only Claude desktop's synced skills. |
 | `openai-gmail` (isolated) | None |
 | An OpenRig seat | Whatever its account's home has, plus any `skill_install` in its agent. The platform's agents install none. |
@@ -157,9 +157,10 @@ folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
 
 Two consequences. A seat or session on an isolated account does not have `loop`,
 `development-workspace` or the others as skills; session entry still reaches it, because its
-instructions point at the default home's copy. And the links are not uniform: some point at
-an older release folder and some at the development checkout, so the version an agent reads
-depends on the link, not on what is installed.
+instructions point at the default home's copy. The default homes' links all point at
+`current/skills/<name>` (checked 2026-09-24), so they follow the activated release. Which skill
+serves which use case, and the proposals for the isolated homes and Pi, are in
+`docs/skills-audit.md`.
 
 ## Every tool, and how they connect
 
