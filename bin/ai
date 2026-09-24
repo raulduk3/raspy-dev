@@ -340,17 +340,18 @@ def open_client(project, client):
 def accounts_menu():
     items = [("Usage for every account", lambda: run(tool("ai-usage"), pause=True)),
              ("Sign in to an account", sign_in),
+             ("Sign in to an account for Morty, Iztac and Neo (Pi)", lambda: sign_in("pi")),
              ("Check the whole setup", lambda: run(tool("ai-env") + ["doctor"], pause=True)),
              ("Refresh the session list, about 20 seconds", lambda: run(tool("ai-session") + ["scan"], pause=True))]
     while (pick := choose("Accounts and setup", items)) is not None:
         pick()
 
 
-def sign_in():
+def sign_in(client=None):
     names = ("anthropic-apple", "anthropic-gmail", "openai-apple", "openai-gmail")
     account = choose("Sign in to which account?", [(a, a) for a in names])
     if account:
-        run(tool("ai-login") + [account])
+        run(tool("ai-login") + [account] + (["--client", client] if client else []))
 
 
 # Sessions and roles ---------------------------------------------------------------------
@@ -421,10 +422,47 @@ def launch_role(store, conversation):
             return
         argv += ["--account", chosen]
     elif profiles:
-        argv += ["--account", profiles[0]]
-    if last_used(store, conversation)[1]:
-        argv += ["--resume", "latest"]
+        chosen = profiles[0]
+        argv += ["--account", chosen]
+    else:
+        chosen = None
+    resume, others = resume_for(store, conversation, chosen)
+    if resume:
+        argv += ["--resume", resume]
+    elif others:
+        note(f"Starting a fresh session on {chosen}; this conversation's earlier sessions were on "
+             f"{', '.join(others)} and resume only on that account.")
     run(argv)
+
+
+def session_account(path):
+    """The account a native Pi session was started on, from its first binding entry."""
+    try:
+        with path.open() as lines:
+            for line in lines:
+                entry = json.loads(line)
+                if entry.get("type") == "custom" and entry.get("customType") == "dev-platform-binding":
+                    return (entry.get("data") or {}).get("accountRef")
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
+
+
+def resume_for(store, conversation, account):
+    """Resume the newest session bound to this account; Pi refuses to resume one bound to another.
+    Returns the --resume value or None, and the other accounts' names when starting fresh."""
+    folder = conversations.path_for(store, conversation["id"]) / "native/pi"
+    files = sorted((p for p in folder.glob("*.jsonl") if p.is_file() and not p.is_symlink()),
+                   key=lambda p: p.stat().st_mtime, reverse=True) if folder.is_dir() else []
+    wanted = f"{account}:pi" if account else None
+    others = []
+    for index, path in enumerate(files):
+        bound = session_account(path)
+        if wanted and bound == wanted:
+            return ("latest" if index == 0 else str(path.resolve())), []
+        if bound and bound.removesuffix(":pi") not in others:
+            others.append(bound.removesuffix(":pi"))
+    return None, others
 
 
 # Teams ----------------------------------------------------------------------------------
