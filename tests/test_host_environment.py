@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import os
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'lib'))
@@ -12,6 +14,13 @@ from ai_ecosystem.environment_service import host_plan
 
 
 class HostEnvironment(unittest.TestCase):
+    def setUp(self):
+        # The service refuses inherited provider overrides; the desktop apps set some.
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(('ANTHROPIC_', 'CLAUDE_CODE_USE_'))}
+        patcher = mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_selection_preserves_profile_and_refuses_unimplemented_rig(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder).resolve()

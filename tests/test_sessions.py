@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 PLATFORM = Path(__file__).resolve().parents[1]
 CLI = PLATFORM / 'bin/ai-session'
@@ -28,6 +29,11 @@ def tree_digest(root):
 
 class SessionIndex(unittest.TestCase):
     def setUp(self):
+        # Resume plans refuse inherited provider overrides; the desktop apps set some.
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(('ANTHROPIC_', 'CLAUDE_CODE_USE_'))}
+        patcher = mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         tmp = tempfile.TemporaryDirectory(prefix='ai-session-')
         self.addCleanup(tmp.cleanup)
         self.base = Path(tmp.name)
