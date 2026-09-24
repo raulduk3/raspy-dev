@@ -34,3 +34,11 @@ The observed installed Rig provider switch implementation returns `switch_execut
 The owner selected OpenAI Apple for the initial named-agent conversations, independently of the four-account worker pool. Native Pi sign-in uses a separate agent configuration directory; existing Codex credentials are not copied. Authentication and a real inference/tool round trip remain acceptance gates. A working `--version` does not prove inference or tool behavior. Do not substitute API billing for subscription access.
 
 The existing account selector has only a Claude development-loop worker adapter. Codex execution integration and both providers' Rig account isolation remain acceptance work.
+
+## Role resource loading
+
+`integrations/pi/role-resources.mjs` is the reusable resource-loading component for the future account-bound launcher. It consumes an already validated conversation, absolute conversation/platform/auth/identity paths, and returns explicit cwd, Pi resources, in-memory settings and the conversation's native session directory.
+
+Personal Morty and system Neo use a neutral workspace within the conversation home and load no repository context. Project/formation Iztac and project Neo use the bound workspace and Pi's repository-context discovery. All roles load their explicitly supplied identity file; only Iztac receives the engineering skill. Automatic extensions, skills, prompt templates and themes are disabled. Approved extensions, including preserved-history access, still need explicit connection in the launcher.
+
+`node integrations/pi/check-role-context.mjs` verifies all five role/scope combinations from two unrelated invoking directories using the installed Pi loader. It demonstrates context selection and paths, not authenticated execution, native resume, account selection, process ownership or OpenRig integration. The OpenAI Apple Pi auth profile still lacked an `openai-codex` credential at the latest local check; Codex authentication is separate.
