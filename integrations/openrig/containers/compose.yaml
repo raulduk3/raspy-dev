@@ -7,7 +7,7 @@
       },
       "image": "dev-platform-account-env:0.5.14",
       "init": true,
-      "restart": "no",
+      "restart": "unless-stopped",
       "ports": [
         "127.0.0.1:17433:7433"
       ],
@@ -38,7 +38,20 @@
       "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
       "networks": [
         "anthropic-apple"
-      ]
+      ],
+      "stop_grace_period": "45s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7433/healthz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "45s"
+      }
     },
     "anthropic-gmail": {
       "build": {
@@ -46,7 +59,7 @@
       },
       "image": "dev-platform-account-env:0.5.14",
       "init": true,
-      "restart": "no",
+      "restart": "unless-stopped",
       "ports": [
         "127.0.0.1:17434:7433"
       ],
@@ -77,7 +90,20 @@
       "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
       "networks": [
         "anthropic-gmail"
-      ]
+      ],
+      "stop_grace_period": "45s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7433/healthz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "45s"
+      }
     },
     "openai-apple": {
       "build": {
@@ -85,7 +111,7 @@
       },
       "image": "dev-platform-account-env:0.5.14",
       "init": true,
-      "restart": "no",
+      "restart": "unless-stopped",
       "ports": [
         "127.0.0.1:17435:7433"
       ],
@@ -116,7 +142,20 @@
       "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
       "networks": [
         "openai-apple"
-      ]
+      ],
+      "stop_grace_period": "45s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7433/healthz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "45s"
+      }
     },
     "openai-gmail": {
       "build": {
@@ -124,7 +163,7 @@
       },
       "image": "dev-platform-account-env:0.5.14",
       "init": true,
-      "restart": "no",
+      "restart": "unless-stopped",
       "ports": [
         "127.0.0.1:17436:7433"
       ],
@@ -155,7 +194,20 @@
       "user": "${AI_ENV_UID:?Run prepare.py first}:${AI_ENV_GID:?Run prepare.py first}",
       "networks": [
         "openai-gmail"
-      ]
+      ],
+      "stop_grace_period": "45s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7433/healthz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "45s"
+      }
     }
   },
   "secrets": {

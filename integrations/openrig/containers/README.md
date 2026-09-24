@@ -1,6 +1,6 @@
 # Local account environments
 
-Candidate deployment for four account-pinned OpenRig hosts. One pinned image, four instances, no credential swapping or proxy. Account environments own execution; project/conversation records own the work. **Image build and two OpenAI environment runtime checks passed on Docker Desktop (Linux arm64). Native account login, worker messaging and recovery remain unverified.**
+Candidate deployment for four account-pinned OpenRig hosts. One pinned image, four instances, no credential swapping or proxy. Account environments own execution; project/conversation records own the work. **Four native CLI logins and distinct provider-pair identities are verified. Worker messaging and recovery of actual authenticated sessions remain unverified.**
 
 The source image now also includes Pi 0.87.1. The separate candidate tag
 `dev-platform-account-env:pi-0.87.1` built successfully and passed all ten
@@ -23,7 +23,7 @@ docker compose --env-file /absolute/private/account-environments/compose.env -f 
 docker compose --env-file /absolute/private/account-environments/compose.env -f integrations/openrig/containers/compose.yaml build
 ```
 
-Start only `openai-apple` and `openai-gmail` for the first simultaneous-account/recovery acceptance, then the two Anthropic services. Use `up -d SERVICE...` with the same Compose/env-file arguments. No automatic restart or worker dispatch is configured. The daemon is foreground under Docker's init; no kernel agent is implicitly requested through `rig daemon start`.
+Start only `openai-apple` and `openai-gmail` for the first simultaneous-account/recovery acceptance, then the two Anthropic services. Use `up -d SERVICE...` with the same Compose/env-file arguments. Containers use `unless-stopped`: Docker restores previously running environments when its engine returns, but intentionally stopped containers stay stopped. No automatic worker dispatch is configured. The daemon is foreground under Docker's init; no kernel agent is implicitly requested through `rig daemon start`.
 
 Each service publishes container port 7433 to localhost ports 17433–17436, in this order: anthropic-apple, anthropic-gmail, openai-apple, openai-gmail. The OpenRig listener binds its container network interface; only its localhost host port is published. Each account has a separate Docker network. In OpenRig 0.5.14 the bearer token gates selected routes (including transport), not the whole API: ordinary rig reads and other control routes are not globally authenticated. Treat these as trusted local-user endpoints, not hardened remote API hosts. Do not publish the ports on all host interfaces.
 
@@ -94,3 +94,54 @@ No automatic usage-based routing is implemented by this deployment. Accounts sta
 - Repeat for the other provider. Only then enable all four for Iztac.
 
 Do not delete environment directories or credentials when stopping/recreating containers. Retain their history in the preservation/backup process. No old OpenClaw state is removed by this deployment.
+
+## Shutdown and account readiness
+
+The account service belongs to all agents/tools; these containers are one
+execution backend. Pi remains host-native with real host filesystem context.
+The shared entrypoint is `bin/ai-environment`, backed by
+`lib/ai_ecosystem/environment_service.py`. It reuses native account probing from
+`ai_ecosystem.accounts`; it does not create a token broker or another daemon.
+
+```sh
+bin/ai-environment --root /absolute/private/account-environments status
+bin/ai-environment --root /absolute/private/account-environments choose codex
+bin/ai-environment --root /absolute/private/account-environments plan --client openrig --provider openai
+```
+
+Plans return JSON version 1, an explicit execution kind, readiness, capability
+state, fresh quota evidence, and declared mounts. Exit 2 with `launch_allowed:
+false` is a normal refusal; callers should retain work and show the reason.
+An explicitly preferred unavailable account is never silently replaced. Native
+identity enrollment is idempotent and refuses changed/duplicate bindings.
+`enroll` records only identity fingerprints; credentials remain native.
+
+Known exhausted accounts are excluded on every fresh selection. Missing usage
+is unknown, not zero used. Only an explicit account plus
+`--allow-unknown-quota` permits a plan with unknown quota. Claude's native auth
+status does not expose usage. `plan --client pi` currently refuses launch and
+reports `execution_kind: host` until the host-native Pi integration is verified;
+there is no container fallback. A valid worker login does not prove Pi auth.
+
+Readiness is a preflight, not a guarantee that the next provider request will
+succeed. Consumers must stop on a runtime quota/auth failure, retain the native
+session, then request a fresh plan for new work. Never automatically replay an
+interrupted command or switch credentials underneath an existing conversation.
+Consumer wiring, a live usage TUI, native interrupted-worker resume, and Pi
+host-profile support remain separate acceptance items.
+
+On this Mac, `com.dev-platform.docker-login.plist` is installed under
+`~/Library/LaunchAgents/` and loaded as a one-shot login item. It opens Docker
+Desktop at user login; it does not restart an already-running engine or supervise
+agents. Containers have persistent host homes/workspaces and the live restart
+policy was updated without recreating them. A Mac boot/login and real interrupted
+worker recovery have not been tested. With FileVault, log in before user services
+can return. Process/tmux memory is not persisted by Docker; native saved history
+is. Manual stops remain stopped.
+
+Compose also declares a 45-second stop grace period and daemon health checks.
+Those two settings require container recreation and are not applied to the
+currently running containers. Docker does not restart a merely unhealthy process
+by itself. Report it as unavailable; do not add a competing watchdog that blindly
+replays agent work. Keep recovery ownership with Docker for processes and the
+native tool/conversation owner for work.
