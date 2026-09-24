@@ -86,7 +86,7 @@ ai-env doctor [--json] [--probe-laya] [--home DIR] [--platform-root DIR]
 Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `broken`:
 
 - whether `claude`, `codex`, `openclaw`, `code`, `gh`, `git`, `jq`, `python3`, `laya-decide` are on PATH;
-- broken symlinks in `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and links whose
+- missing canonical platform skills (directories containing `SKILL.md`) and broken symlinks in `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and links whose
   name matches a platform skill but point somewhere else (divergent). Canonical source is
   `~/Dev/dev-platform`, not the doctor executable’s checkout; override with `--platform-root`;
 - whether `bin/check` exists;

@@ -22,6 +22,7 @@ class Doctor(unittest.TestCase):
         os.symlink(sys.executable, self.bin / 'python3')
         self.platform = self.home / 'Dev/dev-platform'
         (self.platform / 'skills/loop').mkdir(parents=True)
+        (self.platform / 'skills/loop/SKILL.md').write_text('# Loop\n')
         (self.platform / 'bin').mkdir()
         check = self.platform / 'bin/check'
         check.write_text('#!/bin/sh\nexit 0\n')
@@ -92,6 +93,19 @@ class Doctor(unittest.TestCase):
         (skills / 'loop').unlink()
         os.symlink(alternate / 'skills/loop', skills / 'loop')
         self.assertEqual(self.run_doctor('--platform-root', str(alternate))['skills']['.claude/skills']['state'], 'ok')
+
+    def test_missing_canonical_skills_report_drift_without_flagging_extra_skills(self):
+        skills = self.home / '.agents/skills'
+        (skills / 'bounded-decisions').mkdir(parents=True)
+        (skills / 'bounded-decisions/SKILL.md').write_text('# Unmanaged extra skill\n')
+        drift = self.run_doctor()['skills']['.agents/skills']
+        self.assertEqual(drift['state'], 'missing')
+        self.assertEqual(drift['missing'], ['loop'])
+        self.assertEqual(drift['divergent'], [])
+        os.symlink(self.platform / 'skills/loop', skills / 'loop')
+        fixed = self.run_doctor()['skills']['.agents/skills']
+        self.assertEqual(fixed['state'], 'ok')
+        self.assertEqual(fixed['missing'], [])
 
     def test_python_listener_and_real_json_inference_contract(self):
         self.launch()

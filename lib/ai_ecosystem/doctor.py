@@ -27,6 +27,7 @@ def check_commands():
 
 def check_skills(home, platform):
     platform_skills = (platform / 'skills').resolve()
+    expected = {p.parent.name for p in platform_skills.glob('*/SKILL.md') if p.is_file()}
     out = {}
     for rel in SKILL_DIRS:
         folder = home / rel
@@ -41,7 +42,9 @@ def check_skills(home, platform):
                 broken.append(entry.name)
             elif (platform_skills / entry.name).is_dir() and entry.resolve() != (platform_skills / entry.name).resolve():
                 divergent.append(entry.name)
-        out[rel] = {'state': 'broken' if broken or divergent else 'ok', 'broken': broken, 'divergent': divergent}
+        missing = sorted(name for name in expected if not (folder / name / 'SKILL.md').is_file())
+        out[rel] = {'state': 'broken' if broken or divergent else 'missing' if missing else 'ok',
+                    'broken': broken, 'divergent': divergent, 'missing': missing}
     return out
 
 
