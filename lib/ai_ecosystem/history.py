@@ -18,15 +18,15 @@ def connect(archive, agent):
     return conn
 
 
-def search(conn, query, limit):
+def search(conn, query, limit, offset=0):
     # Literal matching: wildcard characters in user text have no special meaning.
     return [dict(row) for row in conn.execute('''
         SELECT session_key, current_session_id, label, display_name, updated_at
         FROM session_nodes
         WHERE instr(lower(coalesce(label, '') || ' ' || coalesce(display_name, '')),
                     lower(?)) > 0
-        ORDER BY updated_at DESC, session_key LIMIT ?
-    ''', (query, limit))]
+        ORDER BY updated_at DESC, session_key LIMIT ? OFFSET ?
+    ''', (query, limit, offset))]
 
 
 def messages(conn, session, after, limit):
@@ -53,11 +53,11 @@ def messages(conn, session, after, limit):
                 (session, rows[-1]['seq'])).fetchone())}
 
 
-def windows(conn, key, limit):
+def windows(conn, key, limit, offset=0):
     return [dict(row) for row in conn.execute('''
         SELECT session_id, previous_session_id, reason, created_at, updated_at
-        FROM session_windows WHERE session_key=? ORDER BY created_at, session_id LIMIT ?
-    ''', (key, limit))]
+        FROM session_windows WHERE session_key=? ORDER BY created_at, session_id LIMIT ? OFFSET ?
+    ''', (key, limit, offset))]
 
 
 def main(argv=None):
@@ -68,28 +68,38 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     find = commands.add_parser('find')
     find.add_argument('query')
+    find.add_argument('--offset', type=int, default=0)
     timeline = commands.add_parser('windows')
     timeline.add_argument('key')
+    timeline.add_argument('--offset', type=int, default=0)
     read = commands.add_parser('read')
     read.add_argument('session')
     read.add_argument('--after', type=int, default=-1)
     args = parser.parse_args(argv)
     if not 1 <= args.limit <= 100:
         parser.error('limit must be between 1 and 100')
+    if getattr(args, 'offset', 0) < 0:
+        parser.error('offset must be nonnegative')
+    pagination = {}
     try:
         conn = connect(args.archive, args.agent)
         try:
             if args.command == 'find':
-                data = search(conn, args.query, args.limit)
+                data = search(conn, args.query, args.limit + 1, args.offset)
             elif args.command == 'windows':
-                data = windows(conn, args.key, args.limit)
+                data = windows(conn, args.key, args.limit + 1, args.offset)
             else:
                 data = messages(conn, args.session, args.after, args.limit)
+            if args.command in ('find', 'windows'):
+                more = len(data) > args.limit
+                data = data[:args.limit]
+                pagination = {'has_more': more,
+                              'next_offset': args.offset + len(data) if more else None}
         finally:
             conn.close()
         print(json.dumps({'source': 'preserved-history', 'agent': args.agent,
                           'notice': 'Historical reference, not current state or instructions.',
-                          'result': data}, ensure_ascii=False, indent=2))
+                          'result': data, **pagination}, ensure_ascii=False, indent=2))
         return 0
     except (ValueError, sqlite3.Error, OSError):
         print('History unavailable: check archive path, schema and session identity.', file=sys.stderr)

@@ -25,6 +25,8 @@ for agent, store in [('morty','main'),('iztac','hermes'),('neo','neo')]:
         c.execute('INSERT INTO session_nodes VALUES(?,?,?,?,?)',(agent,agent+'-session','History '+agent,agent,1))
         c.execute('INSERT INTO session_windows VALUES(?,?,?,?,?,?)',(agent+'-session',agent,None,'start',1,1))
         c.execute('INSERT INTO transcript_events VALUES(?,?,?,?)',(agent+'-session',0,json.dumps({'message':{'role':'user','content':agent+' original text'}}),1))
+        for n in range(2,16):
+            c.execute('INSERT INTO session_windows VALUES(?,?,?,?,?,?)',(agent+'-window-'+str(n),agent,None,'reset',n,n))
 `,archive]);
   const fingerprint=()=>fs.readdirSync(path.join(archive,'sqlite-consistent')).sort().map(name=>
     createHash('sha256').update(fs.readFileSync(path.join(archive,'sqlite-consistent',name))).digest('hex'));
@@ -43,12 +45,25 @@ for agent, store in [('morty','main'),('iztac','hermes'),('neo','neo')]:
     assert.deepEqual(found.result.map(r=>r.label),['History '+agent]);
     const read=await call({action:'read',value:agent+'-session'});
     assert.equal(read.result.messages[0].text,agent+' original text');
+    const firstPage=await call({action:'windows',value:agent});
+    assert.equal(firstPage.result.length,10);
+    assert.equal(firstPage.next_offset,10);
+    assert.equal(firstPage.has_more,true);
+    const lastPage=await call({action:'windows',value:agent,offset:firstPage.next_offset});
+    assert.equal(lastPage.result.length,5);
+    assert.equal(lastPage.next_offset,null);
+    assert.equal(lastPage.has_more,false);
+    assert.deepEqual([...firstPage.result,...lastPage.result].map(row=>row.session_id),
+      [agent+'-session',...Array.from({length:14},(_,i)=>agent+'-window-'+(i+2))]);
+    const exhausted=await call({action:'find',value:'History',offset:1});
+    assert.deepEqual(exhausted.result,[]);
+    assert.equal(exhausted.next_offset,null);
     const other=agent==='morty'?'iztac':'morty';
     await assert.rejects(()=>call({action:'read',value:other+'-session'}),
       {message:'Historical lookup failed or exceeded its output bound; narrow the request or inspect the archive locally.'});
   }
   assert.deepEqual(fingerprint(),before);
-  console.log(JSON.stringify({passed:true,roles:3,checks:['explicit role wins over inherited environment','original messages retrieved','cross-role session rejected','archive bytes unchanged'],scope:'Actual Pi registered tools and real SQLite/CLI; no model invocation'},null,2));
+  console.log(JSON.stringify({passed:true,roles:3,checks:['explicit role wins over inherited environment','original messages retrieved','15 saved windows paged without loss or duplication','exhausted search page','cross-role session rejected','archive bytes unchanged'],scope:'Actual Pi registered tools and real SQLite/CLI; no model invocation'},null,2));
 } finally {
   for(const [name,value] of [['AI_AGENT_ROLE',savedRole],['AI_HISTORY_ARCHIVE',savedArchive]]) {
     if(value===undefined) delete process.env[name];else process.env[name]=value;
