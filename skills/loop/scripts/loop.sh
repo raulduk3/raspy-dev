@@ -271,8 +271,11 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
   local selected_account="${LOOP_ACCOUNT_ID:-}"
   local -a worker_command
   if [ -n "${LOOP_SEAT_RIG:-}" ]; then  # an interactive seat in the owner's running rig instead
+    # The loop's selected account is a Claude one; a Codex seat takes LOOP_SEAT_ACCOUNT or its native home.
+    local seat_account="${LOOP_SEAT_ACCOUNT:-}"
+    [ -n "$seat_account" ] || [ "${LOOP_SEAT_RUNTIME:-claude}" != claude ] || seat_account="$selected_account"
     "${DEV_WORKSPACE:-$here/../../../bin/dev-workspace}" add-worker "${LOOP_SEAT_RUNTIME:-claude}" \
-      --rig "$LOOP_SEAT_RIG" --cwd "$wt" ${selected_account:+--account "$selected_account"} \
+      --rig "$LOOP_SEAT_RIG" --cwd "$wt" ${seat_account:+--account "$seat_account"} \
       || { echo "#$i: no seat confirmed in $LOOP_SEAT_RIG; the worktree stays at $wt"; return 0; }
     echo "#$i -> $branch (seat in $LOOP_SEAT_RIG)"; return 0
   fi

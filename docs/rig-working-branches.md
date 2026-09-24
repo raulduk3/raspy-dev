@@ -33,8 +33,10 @@ mkdir -p ~/Dev/engagements/<repo> && dev-workspace start iztac --cwd ~/Dev/engag
 ```
 
 Let the loop give each dispatched issue a seat instead of a headless worker. The loop
-still cuts the worktree and writes `.worker-brief.md`; `LOOP_SEAT_RUNTIME` picks `claude`
-(the default) or `codex`, and `LOOP_ACCOUNT_ID` pins the account.
+still cuts the worktree and writes `.worker-brief.md`. `LOOP_SEAT_RUNTIME` picks `claude`
+(the default) or `codex`. A Claude seat uses the loop's selected account. A Codex seat uses
+`LOOP_SEAT_ACCOUNT`, or its native home when that is unset, because the loop's own account
+selection accepts only Claude accounts.
 
 ```bash
 LOOP_SEAT_RIG=development-iztac dev-loop go <owner/repo>
@@ -76,11 +78,14 @@ dev-workspace remove-worker --rig development-iztac --cwd <worktree>
   a tracked `CLAUDE.md` or `AGENTS.md` would be one careless `git add` from a commit.
 - Control and overseer run on the native default homes. Pinning them per account needs a
   two-member renderer that does not exist yet; workers are already pinnable.
-- Seats do not count toward the loop's running-worker cap. The plan's local cap still
-  bounds how many issues one `go` dispatches.
+- The loop does not see seats as running workers. `status` and `collect` count only
+  headless workers, so a CYCLE report undercounts, and the cap ignores seats. The plan's
+  local cap still bounds how many issues one `go` dispatches. Fold's only sign of a live
+  seat is its guidance block in the worktree.
 - Every seat starts by asking permission to run `rig whoami`, from OpenRig's boot hint.
   That prompt is the owner's to answer.
 
 Proven 2026-09-24 on a scratch personal repository: the rig started with its three pods,
 a worker seat joined on the Apple Anthropic home, and after `remove-worker` the worktree's
-status was empty.
+status was empty. The loop's seat dispatch is covered by tests through `resume`, not yet by
+a live `dev-loop go` against real issues.

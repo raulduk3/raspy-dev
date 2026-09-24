@@ -370,6 +370,29 @@ class LoopTests(Fixture):
         self.assertTrue(wt.exists())
 
 
+    def test_seat_rig_gives_a_resumed_issue_a_seat_instead_of_a_headless_worker(self):
+        self.setup_remote(); self.loop('start')
+        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        wt = self.repo / '.claude/worktrees/loop-1-example'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/example-1', wt)
+        (wt / '.worker-brief.md').write_text('Scope (only these path prefixes may change): source\n')
+        (self.fakebin / 'gh').write_text('#!/bin/sh\necho \'{"title":"Example","labels":[],"body":"Scope: source"}\'\n')
+        calls = self.base / 'dev-workspace.calls'
+        workspace = self.fakebin / 'dev-workspace'
+        workspace.write_text(f'#!/bin/sh\necho "$*" >> {calls}\n')
+        for path in (self.fakebin / 'gh', workspace):
+            path.chmod(0o755)
+        env = dict(self.env, DEV_WORKSPACE=str(workspace), LOOP_SEAT_RIG='development-iztac')
+        self.loop('resume', '1', env=env)
+        self.loop('resume', '1', env=dict(env, LOOP_SEAT_RUNTIME='codex'))
+        self.loop('resume', '1', env=dict(env, LOOP_SEAT_RUNTIME='codex', LOOP_SEAT_ACCOUNT='openai-gmail'))
+        recorded = calls.read_text().splitlines()
+        self.assertEqual(recorded[0], f'add-worker claude --rig development-iztac --cwd {wt}')
+        self.assertEqual(recorded[-2], f'add-worker codex --rig development-iztac --cwd {wt}')
+        self.assertEqual(recorded[-1], f'add-worker codex --rig development-iztac --cwd {wt} --account openai-gmail')
+        self.assertFalse((self.ctl() / day / 'workers/1.pid').exists())
+
+
 class GuardTests(Fixture):
     def guard(self, command, expected):
         return self.run_cmd('bash', GUARD, input=json.dumps({'cwd': str(self.repo),

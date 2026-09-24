@@ -81,7 +81,8 @@ Writes to GitHub go through `scripts/ghx <owner/repo> <gh args>`, which picks th
 
 With `LOOP_SEAT_RIG=<running rig>`, dispatch cuts the worktree and brief as usual and gives the
 issue an interactive seat in that rig's `workers` pod instead of a headless worker
-(`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex). The owner removes the seat
+(`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex; a Codex seat takes
+`LOOP_SEAT_ACCOUNT` or its native home). Seats are not counted by `status`, `collect` or the cap. The owner removes the seat
 (`dev-workspace remove-worker`) before fold; fold refuses while its block remains and refuses a
 branch that commits OpenRig's managed context. See `docs/rig-working-branches.md`.
 
