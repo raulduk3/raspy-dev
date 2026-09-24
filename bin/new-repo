@@ -211,6 +211,9 @@ if [ "$register" = 1 ]; then
   if [ "$personal" = 1 ] && ! grep -qxF "$root" "$personal_conf" 2>/dev/null; then
     printf '%s\n' "$root" >> "$personal_conf"; echo "new-repo: listed in $personal_conf as your own project"
   fi
+elif awk -v p="$root" '$2==p {found=1} END {exit !found}' "$repos_conf" 2>/dev/null; then
+  echo "new-repo: already listed in $repos_conf"
+  if grep -qxF "$root" "$personal_conf" 2>/dev/null; then echo "new-repo: already listed in $personal_conf as your own project"; fi
 else
   echo "new-repo: to plan and build it with Iztac and the loop, add this line to $repos_conf:"
   printf '  %s\n' "$line"

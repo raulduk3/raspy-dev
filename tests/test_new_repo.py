@@ -44,6 +44,16 @@ class NewRepo(unittest.TestCase):
         self.assertEqual((self.config / 'personal.conf').read_text(), f'{game}\n')
         self.assertIn('registered', result.stdout)
 
+    def test_an_already_listed_repository_is_not_told_to_add_itself(self):
+        self.config.mkdir()
+        game = self.tmp / 'game'
+        game.mkdir()
+        (self.config / 'repos.conf').write_text(f'someone/game {game.resolve()} local develop\n')
+        result = self.new_repo()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('already listed', result.stdout)
+        self.assertNotIn('add this line', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()
