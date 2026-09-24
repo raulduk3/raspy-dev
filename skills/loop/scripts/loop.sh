@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # loop: the development loop as verbs. One local day branch per repository and day, a file
 # ledger on this machine, one pull request to the configured base when the day closes.
-# repos.conf: owner/repo <tab> checkout <tab> owner|bot [<tab> base].
+# repos.conf: owner/repo <tab> checkout <tab> local|owner|bot [<tab> base].
+# local, the default posture: tasks are files in docs/tasks/ on the base branch, the day starts
+# from the local base, and close --merge merges it back locally. GitHub is never called.
+# owner|bot: tasks are GitHub issues and the day closes as one pull request (the identity
+# that makes the two GitHub writes).
 # Without an explicit base: personal uses local origin/HEAD, professional uses develop.
 # The open day pins its base; worker limits are LOOP_CAP, LOOP_WORKER_MAX_TURNS and
 # LOOP_WORKER_MAX_SECONDS. LOOP_WORKER_TOKEN_CEILING is an instruction, not a CLI limit.
@@ -43,12 +47,14 @@
 #   collect <repo>                       write and print the CYCLE                      assistant
 #   fold <repo> <issue|branch> ..        merge a reviewed worker branch into the day
 #                                        branch, keep its body, remove branch+worktree  owner
-#   close <repo> [--as type/slug] [--title t] [--push [--ready]]
+#   close <repo> [--as type/slug] [--title t] [--push [--ready] | --merge]
 #                                        check the day head, write pr.md and print the
 #                                        commands; --push pushes the day branch as
 #                                        type/slug and opens the one pull request; the
 #                                        ghost check runs first in a professional
 #                                        repository                                     owner for --push*
+#                                        (local: --merge merges the day into the base
+#                                        and marks its tasks done)                     owner for --merge
 #   finish <repo> <pr>                   after the owner merged it: close the folded
 #                                        issues, delete the pushed branch, remove the
 #                                        day worktree and branch, steer pause           owner
@@ -131,6 +137,8 @@ is_personal() {  # 1 when the checkout is listed in personal.conf, as the guard 
   echo 0
 }
 personal="$(is_personal 2>/dev/null || echo 0)"
+mode="$(awk -v r="$repo" '$1==r {print $3; exit}' "$CONF" 2>/dev/null)"
+local_mode() { [ "$mode" = local ]; }
 owner_terminal() {  # one exemption: close --push without --ready in a personal repository
   [ -t 0 ] && [ -t 1 ] && return 0
   [ "$verb" = close ] && [ "${push:-0}" = 1 ] && [ "${ready:-0}" = 0 ] && [ "$personal" = 1 ] && return 0
@@ -152,6 +160,12 @@ base_branch() {
   printf '%s\n' "$b"
 }
 base_ref="$(base_branch)"
+# The ref a day is cut from and measured against: the remote base, or the local one.
+base_tip() { if local_mode; then echo "$base_ref"; else echo "origin/$base_ref"; fi; }
+issue_json() {  # <issue> -> {title, body, labels}, from the task file or the GitHub issue
+  if local_mode; then python3 "$here/loop-tasks.py" "$(repo_dir)" "$base_ref" view "$1"
+  else gh issue view "$1" --repo "$repo" --json title,body,labels; fi
+}
 # The ghost check's markers, the guard hook's: a tool-named Co-authored-by trailer or a generated-with line.
 ATTRIBUTION='co-authored-by:.*(anthropic|openai|claude|codex|copilot|noreply@)|(^|[^a-z])generated with'
 # The open day's date decides the ledger directory; without an open day, today's.
@@ -191,8 +205,10 @@ exclusions() {  # "N reason" lines for loop-sense: folded issues and issues with
   return 0
 }
 sense() {  # write and print the PLAN
-  local ex; ex="$(mktemp)"; exclusions > "$ex"
-  "$here/loop-sense.sh" --repo "$repo" --local-cap "$CAP" --exclude-file "$ex" --out "$out/plan.md"
+  local ex tasks=(); ex="$(mktemp)"; exclusions > "$ex"
+  if local_mode; then tasks=(--tasks "$(repo_dir)" "$base_ref"); fi
+  "$here/loop-sense.sh" --repo "$repo" --local-cap "$CAP" --exclude-file "$ex" --out "$out/plan.md" \
+    ${tasks[@]+"${tasks[@]}"}
   rm -f "$ex"
 }
 select_from_plan() {  # [only N ..|skip N ..] -> selected issue numbers, one per line
@@ -221,13 +237,22 @@ dispatch() {  # <issue>...
   grep -qxF '.worker-*' "$exclude" 2>/dev/null || echo '.worker-*' >> "$exclude"
   for i in "$@"; do
     [ "$(running_workers | wc -l | tr -d ' ')" -lt "$CAP" ] || { echo "loop: worker cap reached"; break; }
-    j="$(gh issue view "$i" --repo "$repo" --json title,body,labels)"
+    j="$(issue_json "$i")"
     title="$(jq -r .title <<<"$j")"; labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"
     scope="$(jq -r '(.body // "") | capture("(?m)^Scope: *(?<s>[^\n]+)")? .s // "unspecified"' <<<"$j")"
     slug="$(tr '[:upper:]' '[:lower:]' <<<"$title" | sed -E 's/^[a-z]+-[a-z]+[-:]? *//; s/[^a-z0-9]+/-/g; s/^-|-$//g' | cut -c1-36 | sed -E 's/-$//')"
     kind=fix; case ",$labels," in *",enhancement,"*|*",spec,"*) kind=feat ;; *",documentation,"*) kind=docs ;; esac
     branch="$kind/$slug-$i"; wt="$dir/.claude/worktrees/loop-$i-$slug"; model="$(tier_model "$labels")"
     if [ -e "$wt" ]; then echo "#$i: worktree exists, not relaunched"; continue; fi
+    if local_mode; then
+      read_task="Read the task file \`$(jq -r .path <<<"$j")\` in this worktree: it is the request, and a
+   later section in it wins over an earlier one. Read the spec sections the task cites; read
+   the code and its tests before editing."
+    else
+      read_task="Read the issue with its comments (\`gh issue view $i --repo $repo --comments\`): the owner refines
+   the request in comments, and a comment posted after the body wins. Read the spec sections the
+   issue cites; read the code and its tests before editing."
+    fi
     git -C "$dir" worktree add -q -b "$branch" "$wt" "$day"
     cat > "$wt/.worker-brief.md" <<EOF
 # Worker brief: issue #$i
@@ -238,9 +263,7 @@ Scope (only these path prefixes may change): $scope
 The documentation lines the repository's rules require in the same pull request are always in
 scope as well: the specification text a behavior change affects, its status marker that cites
 this issue, and any lock digest that guards it.
-1. Read the issue with its comments (\`gh issue view $i --repo $repo --comments\`): the owner refines
-   the request in comments, and a comment posted after the body wins. Read the spec sections the
-   issue cites; read the code and its tests before editing.
+1. $read_task
 2. If the fix needs code or test files outside the scope, write what you found (the paths you
    would need and why) to \`.worker-blocked.md\` in this directory and stop. Do not comment on the
    issue. If the code already matches the contract on this base and only the specification's
@@ -269,7 +292,8 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
   local i="$1" wt="$2" model="$3" branch="$4" title="$5"
   local envf common v session_title description
   local selected_account="${LOOP_ACCOUNT_ID:-}"
-  local -a worker_command
+  local -a worker_command issue_tools=()
+  local_mode || issue_tools=("Bash(gh issue view *)")
   if [ -n "${LOOP_SEAT_RIG:-}" ]; then  # an interactive seat in the owner's running rig instead
     # The loop's selected account is a Claude one; a Codex seat takes LOOP_SEAT_ACCOUNT or its native home.
     local seat_account="${LOOP_SEAT_ACCOUNT:-}"
@@ -307,7 +331,7 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
       "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
       "${worker_command[@]}" --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
-        "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
+        "Bash(git add *)" "Bash(git commit *)" ${issue_tools[@]+"${issue_tools[@]}"} \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
         "Bash(ls *)" "Bash(find *)" "Bash(cat *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)" "Bash(grep *)" "Bash(rg *)" \
         "Bash(pwd)" "Bash(which *)" "Bash(mkdir *)" "Bash(rm .worker-blocked.md)" \
@@ -333,6 +357,13 @@ PY
   echo "#$i -> $branch ($model) pid $(cat "$out/workers/$i.pid")"
 }
 
+end_day() {  # remove the day worktree and branch, record the day closed, steer pause
+  local dir; dir="$(repo_dir)"
+  [ -d "$(day_wt "$day")" ] && git -C "$dir" worktree remove --force "$(day_wt "$day")"
+  git -C "$dir" branch -D "$day" >/dev/null 2>&1 || true
+  mv "$ctl/day-branch" "$out/day-branch.closed"; echo pause > "$ctl/steer"
+}
+
 # Serialize dispatch decisions. A missing/leftover lock fails closed; never auto-launch twice.
 case "$verb" in
   go|tick|resume)
@@ -349,7 +380,7 @@ case "$verb" in
     echo "STATUS $(TZ=America/Chicago date '+%Y-%m-%d %H:%M') $repo"
     if [ -f "$ctl/steer" ]; then echo "steer: $(head -1 "$ctl/steer")"; else echo "steer: pause (no steer file)"; fi
     if [ -n "$day" ]; then
-      echo "day: $day, $(git -C "$dir" rev-list --count origin/$base_ref.."$day" 2>/dev/null || echo '?') commits ahead of origin/$base_ref, worktree $(day_wt "$day")"
+      echo "day: $day, $(git -C "$dir" rev-list --count "$(base_tip)".."$day" 2>/dev/null || echo '?') commits ahead of $(base_tip), worktree $(day_wt "$day")"
     else
       echo "day: none open (loop.sh start)"
     fi
@@ -358,7 +389,7 @@ case "$verb" in
     for wt in "$dir"/.claude/worktrees/loop-*; do
       [ -d "$wt" ] || continue; found=1
       i="$(basename "$wt" | sed -nE 's/^loop-([0-9]+)-.*/\1/p')"; b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-      ahead="$(git -C "$dir" rev-list --count "${day:-origin/$base_ref}".."$b" 2>/dev/null || echo '?')"
+      ahead="$(git -C "$dir" rev-list --count "${day:-$(base_tip)}".."$b" 2>/dev/null || echo '?')"
       st=working
       if [ -f "$wt/.worker-blocked.md" ]; then st=blocked
       elif worker_running "$i"; then st=running
@@ -369,25 +400,27 @@ case "$verb" in
     done
     [ "$found" = 1 ] || echo "  none"
     echo "folded:"; if [ -s "$out/folded.tsv" ]; then awk -F'\t' '{print "  #" $1 " " $2 " " $3 " " $4}' "$out/folded.tsv"; else echo "  none"; fi
-    if [ -f "$out/pr-url" ]; then echo "day pull request: $(cat "$out/pr-url") as $(cat "$out/pushed-as" 2>/dev/null)"; else echo "day pull request: not opened (loop.sh close)"; fi
+    if [ -f "$out/merged" ]; then echo "day: merged locally into $(cat "$out/merged")"
+    elif local_mode; then echo "day pull request: none (local; loop.sh close --merge)"
+    elif [ -f "$out/pr-url" ]; then echo "day pull request: $(cat "$out/pr-url") as $(cat "$out/pushed-as" 2>/dev/null)"; else echo "day pull request: not opened (loop.sh close)"; fi
     ;;
   plan)
     sense
     ;;
   start)
     [ -z "$day" ] || { echo "loop: a day is already open ($day)" >&2; exit 3; }
-    if [ -f "$out/pr-merged" ]; then
+    if [ -f "$out/pr-merged" ] || [ -f "$out/merged" ]; then
       n=1; while [ -e "$out.$n" ]; do n=$((n+1)); done
       mv "$out" "$out.$n"; mkdir -p "$out/workers"
       echo "ledger for $dayd already closed; earlier day kept as $(basename "$out").$n"
     fi
-    dir="$(repo_dir)"; git -C "$dir" fetch -q origin "$base_ref"
+    dir="$(repo_dir)"; local_mode || git -C "$dir" fetch -q origin "$base_ref"
     day="loop/$today"; dayd="$today"; out="$ctl/$dayd"; mkdir -p "$out/workers"; wt="$(day_wt "$day")"
     if git -C "$dir" show-ref -q --verify "refs/heads/$day"; then echo "loop: local branch $day already exists; delete or rename it first" >&2; exit 3; fi
-    git -C "$dir" worktree add -q -b "$day" "$wt" origin/$base_ref
+    git -C "$dir" worktree add -q -b "$day" "$wt" "$(base_tip)"
     echo "$day" > "$ctl/day-branch"; echo "$base_ref" > "$ctl/day-base"
     [ -f "$ctl/steer" ] || echo pause > "$ctl/steer"
-    echo "day $day cut from origin/$base_ref $(git -C "$dir" rev-parse --short=8 origin/$base_ref) at $wt"; echo
+    echo "day $day cut from $(base_tip) $(git -C "$dir" rev-parse --short=8 "$(base_tip)") at $wt"; echo
     sense
     echo; echo "steer: $(steer_word). Dispatch with: loop.sh go $repo [only N|skip N]"
     ;;
@@ -419,7 +452,7 @@ case "$verb" in
       [ -f "$wt/.worker-brief.md" ] || { echo "#$i: brief gone, worker finished; review or fold instead"; continue; }
       [ -f "$wt/.worker-blocked.md" ] && { echo "#$i: blocked, widen the scope first"; continue; }
       branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
-      j="$(gh issue view "$i" --repo "$repo" --json title,labels,body)"
+      j="$(issue_json "$i")"
       title="$(jq -r '.title // ""' <<<"$j")"
       labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"; model="$(tier_model "$labels")"
       # The owner may have widened Scope: in the issue body since dispatch; the brief carries the current line.
@@ -461,7 +494,8 @@ PY
     planned="$(grep -cE '^  #[0-9]+ lane=' "$out/plan.md" 2>/dev/null || echo 0)"
     dispatched="$(ls "$out"/workers/*.pid 2>/dev/null | wc -l | tr -d ' ')"
     "$here/loop-collect.sh" --repo "$repo" --dir "$(repo_dir)" --day "$day" --state "$out" --hooks "$HOOKS" \
-      --planned "$planned" --dispatched "$dispatched" --out "$out/cycle.md"
+      --planned "$planned" --dispatched "$dispatched" --out "$out/cycle.md" --base "$(base_tip)" \
+      $(local_mode && echo --local)
     ;;
   fold)
     owner_terminal; need_day >/dev/null; dir="$(repo_dir)"; dwt="$(day_wt "$day")"
@@ -500,15 +534,19 @@ PY
     ;;
   close)
     need_day >/dev/null; dir="$(repo_dir)"; dwt="$(day_wt "$day")"
-    as="fix/$dayd"; title=""; push=0; ready=0
+    as="fix/$dayd"; title=""; push=0; ready=0; merge=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --as) as="$2"; shift 2 ;; --title) title="$2"; shift 2 ;; --push) push=1; shift ;; --ready) ready=1; shift ;;
+        --merge) merge=1; shift ;;
         *) echo "loop: unknown close option $1" >&2; exit 2 ;;
       esac
     done
+    if local_mode && [ "$push$ready" != 00 ]; then echo "loop: $repo is local; close --merge merges the day into $base_ref" >&2; exit 2; fi
+    if ! local_mode && [ "$merge" = 1 ]; then echo "loop: $repo closes as a pull request; --merge is for local repositories" >&2; exit 2; fi
     [ "$ready" = 0 ] || owner_terminal
     [ "$push" = 0 ] || owner_terminal
+    [ "$merge" = 0 ] || owner_terminal
     [ -f "$out/pushed-as" ] && as="$(cat "$out/pushed-as")"
     [[ "$as" =~ ^(feat|fix|refactor|docs|test|chore|build|ci|perf|revert)/[a-z0-9][a-z0-9._/-]*$ ]] && git check-ref-format "refs/heads/$as" >/dev/null || { echo "loop: --as must be a type/slug branch" >&2; exit 2; }
     [ -s "$out/folded.tsv" ] || { echo "loop: nothing folded into $day yet" >&2; exit 3; }
@@ -560,6 +598,30 @@ PY
     fi
     mv "$draft" "$out/pr.md"
     echo "wrote $out/pr.md ($n issue(s): $list)"; echo "title: $title"; echo "ghost check: $ghost"
+    if local_mode; then
+      if [ "$merge" = 0 ]; then
+        printf '\nNext, the owner in a terminal:\n  loop.sh close %s --merge\nwhich merges %s into %s in %s with pr.md as the merge message,\nmoves the folded task files to docs/tasks/done/, and removes the day worktree and branch.\n' \
+          "$repo" "$day" "$base_ref" "$dir"
+        exit 0
+      fi
+      [ "$(git -C "$dir" branch --show-current)" = "$base_ref" ] || { echo "loop: $dir must have $base_ref checked out to merge the day into it" >&2; exit 3; }
+      [ -z "$(git -C "$dir" status --porcelain --untracked-files=no)" ] || { echo "loop: $dir has uncommitted changes; commit or stash them first" >&2; exit 3; }
+      if ! git -C "$dir" merge --no-ff -q -m "$title" -m "$(cat "$out/pr.md")" "$day"; then
+        git -C "$dir" merge --abort 2>/dev/null || true
+        echo "loop: $day does not merge cleanly into $base_ref; nothing changed" >&2; exit 3
+      fi
+      moved=""
+      for i in $issues; do
+        f="$(python3 "$here/loop-tasks.py" "$dir" "$base_ref" path "$i" 2>/dev/null)" || continue
+        case "$f" in docs/tasks/done/*) continue ;; esac
+        mkdir -p "$dir/docs/tasks/done"; git -C "$dir" mv "$f" "docs/tasks/done/$(basename "$f")"; moved="$moved #$i"
+      done
+      [ -z "$moved" ] || git -C "$dir" commit -q -m "chore(tasks): mark$moved done"
+      echo "$base_ref at $(git -C "$dir" rev-parse --short=10 HEAD)" > "$out/merged"
+      end_day
+      echo "merged $day into $base_ref ($(cat "$out/merged")); tasks done:${moved:- none}; day worktree and branch removed, steer pause"
+      exit 0
+    fi
     if [ "$push" = 0 ]; then
       cat <<EOF
 
@@ -587,6 +649,11 @@ EOF
     ;;
   finish)
     owner_terminal; need_day >/dev/null; dir="$(repo_dir)"; dwt="$(day_wt "$day")"
+    if local_mode; then  # the owner merged the day by hand; close --merge already finishes
+      git -C "$dir" merge-base --is-ancestor "$day" "$base_ref" || { echo "loop: $day is not merged into $base_ref; run loop.sh close $repo --merge" >&2; exit 3; }
+      echo "$base_ref at $(git -C "$dir" rev-parse --short=10 "$base_ref")" > "$out/merged"
+      end_day; echo "day $day closed: already in $base_ref; day worktree and branch removed, steer pause"; exit 0
+    fi
     pr="${1:?pull request number}"
     st="$(gh pr view "$pr" --repo "$repo" --json state,headRefName,baseRefName)"
     [ "$(jq -r .state <<<"$st")" = MERGED ] || { echo "loop: #$pr is not merged (state $(jq -r .state <<<"$st"))" >&2; exit 3; }
@@ -608,16 +675,17 @@ EOF
   tidy)
     apply=0; [ "${1:-}" = --apply ] && apply=1
     [ "$apply" = 0 ] || owner_terminal
-    dir="$(repo_dir)"; git -C "$dir" fetch -q --prune origin
+    dir="$(repo_dir)"; local_mode || git -C "$dir" fetch -q --prune origin
     live="$(live_worktrees)"
-    open_heads="$(gh pr list --repo "$repo" --state open --limit 100 --json headRefName --jq '.[].headRefName')"
-    main_sha="$(git -C "$dir" rev-parse "origin/$base_ref")"
+    open_heads=""
+    local_mode || open_heads="$(gh pr list --repo "$repo" --state open --limit 100 --json headRefName --jq '.[].headRefName')"
+    main_sha="$(git -C "$dir" rev-parse "$(base_tip)")"
     tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
     protected() { case "$1" in develop|main|HEAD|"$day"|"$base_ref") return 0 ;; esac; grep -qx "$1" <<<"$open_heads"; }
-    merged_or_pointer() { git -C "$dir" merge-base --is-ancestor "$1" origin/$base_ref 2>/dev/null || [ "$(git -C "$dir" rev-parse "$1" 2>/dev/null)" = "$main_sha" ]; }
+    merged_or_pointer() { git -C "$dir" merge-base --is-ancestor "$1" "$(base_tip)" 2>/dev/null || [ "$(git -C "$dir" rev-parse "$1" 2>/dev/null)" = "$main_sha" ]; }
     echo "TIDY $today $repo"
     echo "remote branches merged into origin/$base_ref:"
-    for b in $(git -C "$dir" for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's#^origin/##'); do
+    local_mode || for b in $(git -C "$dir" for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's#^origin/##'); do
       protected "$b" && continue
       git -C "$dir" merge-base --is-ancestor "origin/$b" origin/$base_ref && { echo "  $b"; echo "$b" >> "$tmp/remote"; }
     done; [ -f "$tmp/remote" ] || echo "  none"
@@ -651,7 +719,7 @@ EOF
     for p in $(cat "$tmp/wt" 2>/dev/null); do git -C "$dir" worktree remove "$p" >/dev/null 2>&1 && echo "  removed $p" || echo "  FAILED $p"; done
     git -C "$dir" worktree prune
     for b in $(cat "$tmp/local" 2>/dev/null); do git -C "$dir" branch -D "$b" >/dev/null 2>&1 && echo "  deleted $b" || echo "  FAILED $b"; done
-    git -C "$dir" fetch -q --prune origin
+    local_mode || git -C "$dir" fetch -q --prune origin
     echo "result: local $(git -C "$dir" for-each-ref refs/heads | wc -l | tr -d ' '), remote $(git -C "$dir" for-each-ref refs/remotes/origin | grep -vc 'origin/HEAD'), worktrees $(git -C "$dir" worktree list | wc -l | tr -d ' ')"
     ;;
   *) echo "unknown verb $verb" >&2; exit 2 ;;

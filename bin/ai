@@ -754,8 +754,9 @@ def loop_menu(project):
              ("Dispatch workers in the background", "go"),
              (f"Dispatch workers as seats in {team}", "seats"),
              ("Pause dispatch", "pause"), ("Cycle report", "collect")]
+    closing = "close --merge" if project.get("mode") == "local" else "close"
     hint = (f"Folding and closing stay your own steps: dev-loop fold {project['repo']} <issue>, "
-            f"dev-loop close {project['repo']}")
+            f"dev-loop {closing} {project['repo']}")
     while (verb := choose(f"Development loop · {project['repo']}", verbs, hint)) is not None:
         if verb == "seats":
             if team not in {r.get("rigName") or r.get("name") for r in rigs()}:

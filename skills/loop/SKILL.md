@@ -19,10 +19,22 @@ open day (`loop/<date>`); its worktree is `.claude/worktrees/day-<date>` in the 
 ## Setup, once per machine
 
 `~/.config/dev-platform/repos.conf`: one line per repository, `owner/repo <tab> checkout path
-<tab> owner|bot [base-branch]`. `owner` means the two GitHub writes the loop makes (`pr create` at close,
+<tab> local|owner|bot [base-branch]`. `local` is the default posture: see Local repositories below;
+`new-repo --register` writes the line. `owner` means the two GitHub writes the loop makes (`pr create` at close,
 `issue close` at finish) use the human's own `gh` login and require the owner’s authorization and the script’s supported execution surface;
 `bot` means the machine user's token from 1Password. `~/.config/dev-platform/brief.conf` sets
 `LOOP_STATE_DIR` (default `~/.local/state/dev-platform/loop`).
+
+## Local repositories
+
+A `local` repository never touches GitHub. Its tasks are files, `docs/tasks/<N>-<slug>.md` on the
+base branch, in the format of that folder's README: the first heading is the title, `Status: ready`
+stands for the `sprint-ready` label, `Labels:` adds labels, and the `Scope:` and `Depends on:` lines
+below apply unchanged. A task in `docs/tasks/done/` is closed. `start` cuts the day from the local
+base without fetching. The worker brief points at the task file. `close` checks the day head and
+writes `pr.md`; `close --merge`, in the owner's terminal with the base checked out and clean, merges
+the day into the base with `pr.md` as its message, moves the folded tasks to `done/`, and removes the
+day worktree and branch. `finish` only tidies a day the owner merged by hand. Nothing is pushed.
 
 ## Issue conventions
 

@@ -393,6 +393,63 @@ class LoopTests(Fixture):
         self.assertFalse((self.ctl() / day / 'workers/1.pid').exists())
 
 
+class LocalLoopTests(Fixture):
+    """A local repository: tasks are files, the day merges back locally, GitHub is never called."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_cmd('git', 'checkout', '-qb', 'develop')
+        tasks = self.repo / 'docs/tasks'
+        tasks.mkdir(parents=True)
+        (tasks / 'README.md').write_text('# Tasks\n')
+        (tasks / '1-game-rules.md').write_text(
+            '# Game rules\n\nStatus: ready\nLabels: enhancement\nScope: source\nDepends on: none\n\nBuild it.\n')
+        (tasks / '2-polish.md').write_text('# Polish\n\nStatus: ready\nScope: extra\nDepends on: #1\n\nLater.\n')
+        (tasks / '3-draft.md').write_text('# Draft\n\nStatus: draft\nScope: other\nDepends on: none\n')
+        self.commit()
+        self.configure(base='develop', personal=True, identity='local')
+        gh = self.fakebin / 'gh'
+        gh.write_text('#!/bin/sh\necho "$*" >> "$GH_CALLS"\nexit 99\n')
+        gh.chmod(0o755)
+        self.workspace = self.fakebin / 'dev-workspace'
+        self.workspace.write_text(f'#!/bin/sh\necho "$*" >> {self.base / "dev-workspace.calls"}\n')
+        self.workspace.chmod(0o755)
+        self.addCleanup(lambda: self.assertFalse((self.base / 'gh.calls').exists(), 'a local repository called gh'))
+
+    def in_owner_terminal(self, *args):
+        return LoopTests.in_owner_terminal(self, *args)
+
+    def test_a_day_runs_from_task_files_to_a_local_merge(self):
+        start = self.loop('start').stdout
+        self.assertIn('cut from develop', start)
+        self.assertIn('#1 lane=', start)
+        self.assertIn('#2 waits on #1', start)
+        self.assertNotIn('#3 lane=', start)
+        env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')
+        self.loop('go', env=env)
+        wt = next((self.repo / '.claude/worktrees').glob('loop-1-*'))
+        brief = (wt / '.worker-brief.md').read_text()
+        self.assertIn('Read the task file `docs/tasks/1-game-rules.md`', brief)
+        self.assertNotIn('gh issue view', brief)
+        self.assertIn('feat/', self.run_cmd('git', 'branch', '--show-current', cwd=wt).stdout)
+        (wt / 'source').write_text('changed\n')
+        self.run_cmd('git', 'commit', '-qam', 'feat(game): rules', cwd=wt)
+        (wt / '.worker-pr.md').write_text('## What changed and why\n\nRules.\n\nCloses #1\n')
+        self.assertIn('folded', self.in_owner_terminal('fold', 'test/repo', '1'))
+        self.assertIn('close test/repo --merge', self.loop('close').stdout)
+        self.loop('close', '--push', expected=2)
+        self.assertIn('merged loop/', self.in_owner_terminal('close', 'test/repo', '--merge'))
+        self.assertEqual((self.repo / 'source').read_text(), 'changed\n')
+        self.assertTrue((self.repo / 'docs/tasks/done/1-game-rules.md').exists())
+        self.assertFalse((self.repo / 'docs/tasks/1-game-rules.md').exists())
+        self.assertFalse((self.ctl() / 'day-branch').exists())
+        self.assertEqual((self.ctl() / 'steer').read_text().strip(), 'pause')
+        self.assertIn('#2 lane=', self.loop('plan').stdout)
+        self.assertIn('merged locally into develop', self.loop('status').stdout)
+        self.assertIn('CYCLE', self.loop('collect').stdout)
+        self.assertIn('read-only', self.loop('tidy').stdout)
+
+
 class GuardTests(Fixture):
     def guard(self, command, expected):
         return self.run_cmd('bash', GUARD, input=json.dumps({'cwd': str(self.repo),
