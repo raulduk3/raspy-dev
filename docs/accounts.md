@@ -119,3 +119,64 @@ workers. This selector is a foundation for that rollout, not an atomic global sw
   from a newer documentation version.
 - [OpenRig getting started](https://www.openrig.dev/docs/getting-started): native
   Claude and Codex seats, distinct from provider account rebinding.
+
+## Equipping an isolated home: `ai-profile`
+
+Binding an isolated account (`ai-account bind ... --home ~/.local/share/dev-platform/accounts/<id>`)
+only proves native login. The two machine-default homes, `~/.claude` and
+`~/.codex`, are also equipped with the platform's furniture: hook wiring that
+refuses protected pushes/merges/service operations, and Ricky's global
+instructions. A freshly bound isolated home starts bare and does not have any
+of that — a coding worker launched there would run without the guard. `ai-profile`
+closes that gap for one named, already-bound account, without ever touching
+native login.
+
+A fully-equipped account home contains:
+
+- **Claude home** (`settings.json`, `CLAUDE.md`): the platform's three hooks
+  (`PreToolUse` guard, `PostToolUse` formatter, `Stop` check — the same
+  commands as the default home, mirrored from `hooks/claude-settings.hooks.json`,
+  not the live `~/.claude/settings.json`, which also carries desktop-only
+  personal keys that must not be replicated); a `statusLine` entry invoking
+  `python3 $HOME/Dev/dev-platform/integrations/claude/usage-collector.py
+  --account <account-id>`, which writes its cache to
+  `~/.local/state/dev-platform/usage/<account-id>.json`; and global
+  instructions mirrored verbatim from the live default `~/.claude/CLAUDE.md`.
+- **Codex home** (`AGENTS.md`, `rules/default.rules`): global instructions
+  mirrored verbatim from the live default `~/.codex/AGENTS.md`, and the
+  platform's guard rules mirrored from `hooks/codex.rules` — the literal
+  Codex-side equivalent of Claude's `PreToolUse` guard hook, so an isolated
+  Codex worker refuses the same protected pushes/merges/restarts the default
+  home already refuses.
+
+Safety rules, enforced in `lib/ai_ecosystem/profiles.py`, not just documented:
+
+- Never reads, writes, moves, or backs up `auth.json`, `.credentials.json`, or
+  any other token/secret-shaped file. Only the fixed paths above are ever
+  opened; the home's directory listing is never enumerated.
+- Never overwrites an existing file the platform did not author without first
+  writing a timestamped, `0600` backup beside it.
+- Idempotent: a JSON file (`settings.json`) is merged structurally — hook
+  entries de-duplicated by matcher/command, every other key preserved — and a
+  text file (`CLAUDE.md`/`AGENTS.md`/`default.rules`) is merged inside a
+  `<!-- dev-platform:managed:begin/end -->` block, preserving any pre-existing
+  content outside it. A second `apply` of the same source content is a
+  byte-for-byte no-op.
+- Refuses to operate on a home that is a symlink, or whose path contains a
+  symlink anywhere in its ancestry.
+- Refuses to `apply` (not `plan`) to a `native_default` binding — the two
+  machine-default homes are equipped separately and are not touched by this
+  tool.
+- Created files are `0600`; created directories are `0700`.
+
+Commands:
+
+```sh
+ai-profile plan anthropic-apple     # read-only: prints exactly what apply would do
+ai-profile apply anthropic-apple    # idempotent: creates/merges the files above
+```
+
+Both accept the same `--registry` flag as `ai-account`. `plan` never writes
+anything; `apply` writes only inside the account's bound home, only the fixed
+paths listed above, and only after any pre-existing content has been
+backed up.
