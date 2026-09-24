@@ -46,6 +46,6 @@ repository).
 
 - Host, container or provider work: the operations session, read-only, with the owner's go for
   any mutation.
-- Scheduling, memory, morning brief, daily loop, intake from meetings: the assistant.
+- Scheduling, memory, daily loop, intake from meetings: the assistant.
 - An issue with a scope and a check: a headless coding agent in its own worktree.
 - Personal, finance, journal: not engineering; not this surface.
