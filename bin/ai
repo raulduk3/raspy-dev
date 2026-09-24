@@ -383,7 +383,7 @@ def team_menu(team, project=None):
             herdr_view(team)
         elif pick == "stop":
             if confirm(f"Stop every agent in {team}? OpenRig keeps a snapshot."):
-                run(tool("rig") + ["down", team])
+                run(tool("rig") + ["down", rig_id or team])
                 return
         elif pick in ("seat", "unseat"):
             worker_seat(project, team, pick)
@@ -407,8 +407,10 @@ def herdr_view(team):
 
     # Each open adds a workspace; replace the old ones so there is one view per team.
     # Closing a view only detaches its viewers; no agent stops.
+    here = os.environ.get("HERDR_WORKSPACE_ID")
     for old in views():
-        run(["herdr", "workspace", "close", old["workspace_id"]])
+        if old["workspace_id"] != here:  # never close the view this menu is running in
+            run(["herdr", "workspace", "close", old["workspace_id"]])
     run(tool("rig") + ["terminal", "open", team])
     fresh = views()
     if fresh:

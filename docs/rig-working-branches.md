@@ -25,6 +25,11 @@ quota from gating both writing and review.
 
 ## Using it
 
+The easy way is the `ai` menu: pick a project, then "This project's team". It names the
+team `iztac-<project>` and makes its engagement folder for you, so every project gets its
+own team. The commands below are what it runs. Without `--rig`, `start iztac` makes a
+single rig called `development-iztac`.
+
 Start the control rig from an empty engagement folder. `start` refuses a folder inside a
 Git checkout.
 

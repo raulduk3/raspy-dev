@@ -128,7 +128,7 @@ class Menu(unittest.TestCase):
         runs = self.runs(output)
         self.assertEqual(runs[0], 'tmux attach -t control-lead@t')
         self.assertTrue(runs[1].endswith('bin/rig launch R1 review.overseer'))
-        self.assertTrue(runs[2].endswith('bin/rig down t'))
+        self.assertTrue(runs[2].endswith('bin/rig down R1'))
 
     def test_herdr_view_replaces_only_this_teams_views(self):
         listing = {'result': {'workspaces': [
@@ -136,10 +136,10 @@ class Menu(unittest.TestCase):
             {'workspace_id': 'w3', 'label': 'openrig:rig:t-two#l3'}, {'workspace_id': 'w4', 'label': '~'}]}}
         with mock.patch.object(self.menu, 'read_json', return_value=listing), \
                 mock.patch.object(self.menu.shutil, 'which', return_value='/bin/herdr'), \
-                mock.patch.dict(os.environ, {'HERDR_ENV': '1'}):
+                mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w2'}):
             runs = self.runs(self.drive(self.menu.herdr_view, team='t'))
-        self.assertEqual(runs[:2], ['herdr workspace close w1', 'herdr workspace close w2'])
-        self.assertTrue(runs[2].endswith('bin/rig terminal open t'))
+        self.assertEqual(runs[:1], ['herdr workspace close w1'])  # w2 holds this menu
+        self.assertTrue(runs[1].endswith('bin/rig terminal open t'))
         self.assertNotIn('herdr', runs)  # inside herdr it focuses, never nests
 
     def test_loop_dispatches_seats_only_into_a_running_team(self):
