@@ -87,6 +87,17 @@ the guidance files back. `docs/rig-working-branches.md` has the commands.
 
 ## Day to day
 
+**Start with the menu.** One command covers everything below: projects, sessions, Morty,
+Neo, Iztac, teams and accounts. Pick by number, type to filter, Enter goes back, q quits.
+Anything you open hands over the terminal and comes back to the menu when you leave it.
+
+```bash
+ai
+```
+
+`ai research` jumps straight to the project whose name matches. The commands below are
+what the menu runs for you.
+
 **See how much you have left.** Nothing changes.
 
 ```bash

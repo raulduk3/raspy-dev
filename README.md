@@ -7,6 +7,8 @@ initialized to, and the tools that keep them in place.
   OpenRig, for the person using it. Start there.
 - `docs/rig-working-branches.md`: the control rig, one worker seat per loop worktree and
   a Codex overseer; how to start it and fold its work.
+- `bin/ai`: the menu over everything here. Projects, sessions, roles, teams and accounts
+  from numbered lists; it hands off to the commands below and keeps no state of its own.
 - `templates/`: files copied into every new repository (agent instructions, contributing
   policy, pull request template, code owners, dependency updates, check and release workflows,
   the hygiene check, the version script, the decision record template, the empty specification

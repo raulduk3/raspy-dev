@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""ai: one menu over the whole AI environment.
+
+Pick a project, a session, a role or a team from numbered lists. The menu hands the
+terminal to the command that already does that job (ai-environment, ai-session, ai-role,
+dev-workspace, rig, tmux, herdr) and comes back when it exits. It keeps no state of its
+own. `ai <text>` jumps straight to the project whose name matches. AI_MENU_DRY_RUN=1
+prints each launch instead of running it.
+"""
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "lib"))
+from ai_ecosystem import accounts, conversations, usage, workspace  # noqa: E402
+from ai_ecosystem.store import Store  # noqa: E402
+
+HOME = Path.home()
+REPOS = Path(os.environ.get("DEV_PLATFORM_REPOS", HOME / ".config/dev-platform/repos.conf"))
+DEV_ROOT = os.environ.get("AI_MENU_DEV_ROOT", str(HOME / "Dev"))
+REGISTRY = HOME / ".config/dev-platform/accounts.json"
+PI_PROFILES = HOME / ".local/share/dev-platform/accounts/pi"
+ENGAGEMENTS = HOME / ".local/state/dev-platform/engagements"
+DRY = os.environ.get("AI_MENU_DRY_RUN") == "1"
+PROVIDER = {"claude": "anthropic", "codex": "openai"}
+CLIENT = {"claude": "Claude Code", "codex": "Codex"}
+
+
+class Quit(Exception):
+    pass
+
+
+def clean_environment():
+    """Make launches see what a plain terminal would. A Claude desktop terminal marks itself
+    and sets the default Anthropic URL; dropping a value equal to the default changes no
+    provider. Any other override stays, and accounts.conflicts reports it on the home screen."""
+    for name in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_HOME", "CODEX_THREAD_ID", "CLAUDE_CONFIG_DIR"):
+        os.environ.pop(name, None)
+    if os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/") == "https://api.anthropic.com":
+        del os.environ["ANTHROPIC_BASE_URL"]
+    path = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(path + [p for p in (str(HOME / ".local/bin"), "/opt/homebrew/bin")
+                                                 if p not in path])
+
+
+def tool(name):
+    return [sys.executable, str(ROOT / "bin" / name)]
+
+
+def run(argv, cwd=None, extra=None):
+    """Hand the terminal to a command and come back when it exits."""
+    if DRY:
+        tail = "".join(f" {k}={v}" for k, v in (extra or {}).items())
+        print("RUN " + " ".join(str(a) for a in argv) + (f"  in {cwd}" if cwd else "") + tail)
+        return 0
+    try:
+        return subprocess.run([str(a) for a in argv], cwd=cwd, env={**os.environ, **(extra or {})}).returncode
+    except KeyboardInterrupt:
+        return 130
+    except OSError as error:
+        print(f"  could not start {argv[0]}: {error}")
+        return 127
+
+
+def read_json(argv):
+    try:
+        result = subprocess.run([str(a) for a in argv], capture_output=True, text=True, timeout=60)
+        return json.loads(result.stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def ask(prompt):
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        raise Quit from None
+
+
+def confirm(question):
+    return ask(f"{question} [y/N] ").lower() in ("y", "yes")
+
+
+def choose(title, items, hint=None):
+    """A number picks, other text filters the list, Enter or b goes back, q quits."""
+    query = ""
+    while True:
+        shown = [item for item in items if query.lower() in item[0].lower()]
+        print(f"\n{title}" + (f"  · filter: {query}" if query else ""))
+        if hint:
+            print(f"  {hint}")
+        for number, (label, _) in enumerate(shown[:30], 1):
+            print(f"  {number:>2}  {label}")
+        if len(shown) > 30:
+            print(f"      and {len(shown) - 30} more; type part of a name to filter")
+        if not shown:
+            print("      nothing here" + (" matches" if query else ""))
+        answer = ask("› ")
+        if answer in ("", "b"):
+            if not query:
+                return None
+            query = ""
+        elif answer == "q":
+            raise Quit
+        elif answer.isdigit():
+            if 1 <= int(answer) <= min(len(shown), 30):
+                return shown[int(answer) - 1][1]
+            print(f"  There is no {answer} here.")
+        else:
+            query = answer
+
+
+def ago(value):
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return "unknown"
+    if not value:
+        return "never"
+    minutes = int((time.time() - value) / 60)
+    for size, unit in ((1440, "d"), (60, "h"), (1, "m")):
+        if minutes >= size:
+            return f"{minutes // size}{unit} ago"
+    return "just now"
+
+
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "project"
+
+
+# Projects -------------------------------------------------------------------------------
+
+def catalog():
+    return workspace.catalog(REPOS, DEV_ROOT)[0]
+
+
+def name(project):
+    return Path(project["root"]).name
+
+
+def team_name(project):
+    return "iztac-" + slug(name(project))
+
+
+def project_for(path):
+    identity = workspace.identity(path)
+    return next((p for p in catalog() if identity and p["common_dir"] == identity), None)
+
+
+def projects_menu(query=""):
+    projects = catalog()
+    items = [(f"{name(p)} · {p['repo'] or p['group']}" + (" · loop" if p["loop_enabled"] else ""), p)
+             for p in projects if query.lower() in name(p).lower()]
+    if query and len(items) == 1:
+        return project_menu(items[0][1])
+    project = choose("Projects", items)
+    if project:
+        project_menu(project)
+
+
+def project_menu(project):
+    branch = subprocess.run(["git", "-C", project["root"], "branch", "--show-current"],
+                            capture_output=True, text=True).stdout.strip()
+    while True:
+        items = [("Claude here", lambda: open_client(project, "claude")),
+                 ("Codex here", lambda: open_client(project, "codex"))]
+        if project["source"] == "repos.conf":
+            items.append(("Iztac on this project", lambda: role_menu("iztac", project)))
+        items += [("Resume a session here", lambda: sessions_menu(project)),
+                  ("This project's team", lambda: project_team(project))]
+        if project["loop_enabled"]:
+            items.append(("Development loop", lambda: loop_menu(project)))
+        if shutil.which("code"):
+            items.append(("Open in VS Code", lambda: run(["code", project["root"]])))
+        pick = choose(f"{name(project)} · {project['root']}" + (f" · on {branch}" if branch else ""), items)
+        if pick is None:
+            return
+        pick()
+
+
+# Accounts -------------------------------------------------------------------------------
+
+def usage_rows(client):
+    try:
+        view = usage.unified_view(accounts.load(REGISTRY), openrig_home=HOME / ".openrig")
+        return [row for row in view["accounts"] if row["client"] == CLIENT[client]]
+    except Exception:  # a usage read failing must not block a launch; fall back to names
+        prefix = PROVIDER[client] + "-"
+        names = sorted(a for a in accounts.load(REGISTRY).get("bindings", {}) if a.startswith(prefix))
+        return [{"account": a, "state": "unknown", "windows": [], "freshness": ""} for a in names]
+
+
+def headroom(row):
+    if row["state"] in ("exhausted", "unverified"):
+        return -2
+    used = [w["used_percent"] for w in row["windows"] if w.get("used_percent") is not None]
+    return 100 - max(used) if used else -1
+
+
+WINDOW = {"five_hour": "5h", "seven_day": "7d", "primary": "week"}
+
+
+def account_label(row):
+    windows = ", ".join(f"{WINDOW.get(w['window'], w['window'])} {w['used_percent']:.0f}% used"
+                        for w in row["windows"])
+    age = "" if row.get("freshness") in ("live", "") else f" · {row['freshness']}"
+    return f"{row['account']:<16} {row['state']:<13} {windows or 'usage unknown'}{age}"
+
+
+def pick_account(client):
+    rows = sorted(usage_rows(client), key=headroom, reverse=True)
+    items = [(account_label(r) + ("  · most room" if i == 0 and headroom(r) > 0 else ""), r["account"])
+             for i, r in enumerate(rows)]
+    return choose(f"Which {CLIENT[client]} account?", items)
+
+
+def open_client(project, client):
+    account = pick_account(client)
+    if account:
+        run(tool("ai-environment") + ["run", "--client", client, "--provider", PROVIDER[client],
+                                      "--preferred-account", account, "--allow-unknown-quota",
+                                      "--cwd", project["root"]])
+
+
+def accounts_menu():
+    items = [("Usage for every account", lambda: run(tool("ai-usage"))),
+             ("Sign in to an account", sign_in),
+             ("Check the whole setup", lambda: run(tool("ai-env") + ["doctor"])),
+             ("Refresh the session list, about 20 seconds", lambda: run(tool("ai-session") + ["scan"]))]
+    while (pick := choose("Accounts and setup", items)) is not None:
+        pick()
+
+
+def sign_in():
+    names = ("anthropic-apple", "anthropic-gmail", "openai-apple", "openai-gmail")
+    account = choose("Sign in to which account?", [(a, a) for a in names])
+    if account:
+        run(tool("ai-login") + [account])
+
+
+# Sessions and roles ---------------------------------------------------------------------
+
+def sessions_menu(project):
+    projects = catalog()
+    names = {p["id"]: name(p) for p in projects}
+    rows = workspace.session_rows(projects, Store().root, project["id"] if project else None, 200)["sessions"]
+    items = []
+    for row in rows:
+        if row["runtime"] not in ("claude", "codex") or row["owner"] != "user":
+            continue
+        where = Path(row["cwd"] or "?").name
+        owner = names.get(row["project"], "")
+        parts = [f"[{row['runtime']}]", *([owner] if owner and owner != where else []), where,
+                 *([row["title"]] if row["title"] else []), ago(row["updated_at"])]
+        items.append((" · ".join(parts), row))
+    pick = choose("Resume a session" + (f" in {name(project)}" if project else ""), items,
+                  "Newest first. The list is as fresh as its last refresh, under Accounts and setup.")
+    if pick:
+        run(tool("ai-session") + ["resume", pick["id"], "--execute"])
+
+
+def last_used(store, conversation):
+    folder = conversations.path_for(store, conversation["id"]) / "native/pi"
+    stamps = [p.stat().st_mtime for p in folder.glob("*.jsonl")] if folder.is_dir() else []
+    return max(stamps, default=0), bool(stamps)
+
+
+def role_menu(agent, project=None):
+    store = Store()
+    mine = [c for c in conversations.list_conversations(store) if c["agent"] == agent
+            and (project is None or c["scope"].get("project_id") == project["id"])]
+    mine.sort(key=lambda c: last_used(store, c)[0] or c.get("created_at", 0), reverse=True)
+    items = [(f"Continue: {c['title']} · {ago(last_used(store, c)[0] or c.get('created_at'))}", c) for c in mine]
+    items.append(("Start a new conversation", "new"))
+    title = {"morty": "Morty, personal", "neo": "Neo, this machine"}.get(agent, f"Iztac on {name(project) if project else ''}")
+    pick = choose(title, items)
+    if pick == "new":
+        pick = new_conversation(agent, project)
+    if pick:
+        launch_role(store, pick)
+
+
+def new_conversation(agent, project):
+    default = name(project) if project else datetime.now().strftime("%B %-d")
+    title = ask(f"Name it, or Enter for '{default}': ") or default
+    argv = tool("ai-session") + ["conversation", "create", "--agent", agent, "--title", title]
+    if agent == "iztac":
+        argv += ["--project", project["id"], "--workspace", project["root"]]
+    elif agent == "neo":
+        argv += ["--resource", "this-mac"]
+    if DRY:
+        run(argv)
+        return None
+    created = read_json(argv)
+    if not created or "id" not in created:
+        print("  The conversation could not be created; run the same step from ai-session to see why.")
+    return created
+
+
+def launch_role(store, conversation):
+    argv = tool("ai-role") + ["launch", conversation["id"]]
+    profiles = sorted(d.name for d in PI_PROFILES.iterdir() if d.is_dir()) if PI_PROFILES.is_dir() else []
+    if len(profiles) > 1:
+        chosen = choose("Which Pi account?", [(p, p) for p in profiles])
+        if not chosen:
+            return
+        argv += ["--account", chosen]
+    elif profiles:
+        argv += ["--account", profiles[0]]
+    if last_used(store, conversation)[1]:
+        argv += ["--resume", "latest"]
+    run(argv)
+
+
+# Teams ----------------------------------------------------------------------------------
+
+def rigs():
+    data = read_json(tool("rig") + ["ps", "--json"])
+    return (data.get("entries") if isinstance(data, dict) else data) or []
+
+
+def seats(team):
+    return read_json(tool("rig") + ["ps", "--nodes", "--rig", team, "--json"]) or []
+
+
+def seat_state(seat):
+    activity = seat.get("agentActivity") or {}
+    if seat.get("sessionStatus") != "running":
+        return "stopped"
+    if activity.get("state") == "needs_input" or "prompt" in str(activity.get("reason")):
+        return "waiting on you"
+    state = {"running": "working", "idle": "idle"}.get(activity.get("state"), "running")
+    return state + (" · OpenRig asks you to look" if seat.get("lifecycleState") == "attention_required" else "")
+
+
+def teams_menu():
+    while True:
+        items = [(f"{r.get('rigName') or r.get('name')} · {r.get('runningCount', 0)} of {r.get('nodeCount', 0)} running"
+                  + (f" · {r['attentionCount']} need you" if r.get("attentionCount") else ""),
+                  r.get("rigName") or r.get("name")) for r in rigs()]
+        team = choose("Teams", items, None if items else "No team is running. Start one from a project.")
+        if team is None:
+            return
+        team_menu(team)
+
+
+def project_team(project):
+    team = team_name(project)
+    if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
+        folder = ENGAGEMENTS / slug(name(project))
+        print(f"\n{name(project)} has no team yet. Starting one opens a control seat and a Codex overseer.\n"
+              f"They work from {folder}, outside the repository. Workers join later, one per loop worktree.")
+        if not confirm("Start it?"):
+            return
+        folder.mkdir(parents=True, exist_ok=True)
+        if run(tool("dev-workspace") + ["start", "iztac", "--cwd", folder, "--rig", team]) != 0 and not DRY:
+            return
+    team_menu(team, project)
+
+
+def team_menu(team, project=None):
+    while True:
+        rows = seats(team)
+        rig_id = rows[0]["rigId"] if rows else None
+        items = [("See every agent at once in herdr", "view")]
+        items += [(f"{s['logicalId']} · {s.get('runtime')} · {seat_state(s)}", s) for s in rows]
+        if project:
+            items += [("Seat a loop worktree", "seat"), ("Unseat a finished worker", "unseat")]
+        items.append(("Stop this team", "stop"))
+        pick = choose(f"Team {team}", items, "Pick an agent to open it. Ctrl+b then d leaves it running.")
+        if pick is None:
+            return
+        if pick == "view":
+            herdr_view(team)
+        elif pick == "stop":
+            if confirm(f"Stop every agent in {team}? OpenRig keeps a snapshot."):
+                run(tool("rig") + ["down", team])
+                return
+        elif pick in ("seat", "unseat"):
+            worker_seat(project, team, pick)
+        elif seat_state(pick) == "stopped":
+            if confirm(f"{pick['logicalId']} is stopped. Relaunch it with its saved conversation?"):
+                run(tool("rig") + ["launch", rig_id, pick["logicalId"]])
+        else:
+            session = pick["canonicalSessionName"]
+            run(["tmux", "switch-client", "-t", session] if os.environ.get("TMUX") else ["tmux", "attach", "-t", session])
+
+
+def herdr_view(team):
+    if not shutil.which("herdr"):
+        print("  herdr is not installed. Pick one agent from the list to open it on its own.")
+        return
+    pattern = re.compile(rf"openrig:(rig:{re.escape(team)}#|pod:{re.escape(team)}/)")
+
+    def views():
+        listing = read_json(["herdr", "workspace", "list"]) or {}
+        return [w for w in listing.get("result", {}).get("workspaces", []) if pattern.match(w.get("label", ""))]
+
+    # Each open adds a workspace; replace the old ones so there is one view per team.
+    # Closing a view only detaches its viewers; no agent stops.
+    for old in views():
+        run(["herdr", "workspace", "close", old["workspace_id"]])
+    run(tool("rig") + ["terminal", "open", team])
+    fresh = views()
+    if fresh:
+        run(["herdr", "workspace", "focus", fresh[-1]["workspace_id"]])
+    if not os.environ.get("HERDR_ENV"):
+        print("  Opening herdr. Ctrl+b then q leaves it; every agent keeps running.")
+        run(["herdr"])
+
+
+def worktrees(project, seated):
+    found = []
+    for folder in sorted((Path(project["root"]) / ".claude/worktrees").glob("loop-*")):
+        guidance = [folder / "CLAUDE.md", folder / "AGENTS.md"]
+        has_seat = any(f.is_file() and "OpenRig MANAGED BLOCK" in f.read_text() for f in guidance)
+        if folder.is_dir() and has_seat == seated:
+            ready = " · ready for review" if (folder / ".worker-pr.md").exists() else ""
+            found.append((folder.name + ready, folder))
+    return found
+
+
+def worker_seat(project, team, action):
+    folder = choose("Which worktree?", worktrees(project, action == "unseat"),
+                    "Worktrees come from the development loop, one per issue.")
+    if folder is None:
+        return
+    if action == "unseat":
+        run(tool("dev-workspace") + ["remove-worker", "--rig", team, "--cwd", folder])
+        issue = re.match(r"loop-(\d+)-", folder.name)
+        if issue and project["repo"]:
+            print(f"  Folding stays your own step. When you have read the diff, run:\n"
+                  f"  dev-loop fold {project['repo']} {issue.group(1)}")
+        return
+    client = choose("Which agent?", [("Claude", "claude"), ("Codex", "codex")])
+    account = client and pick_account(client)
+    if account:
+        run(tool("dev-workspace") + ["add-worker", client, "--rig", team, "--cwd", folder, "--account", account])
+
+
+# Loop -----------------------------------------------------------------------------------
+
+def loop_menu(project):
+    team = team_name(project)
+    verbs = [("Status", "status"), ("Plan the day", "plan"), ("Start the day", "start"),
+             ("Dispatch workers in the background", "go"),
+             (f"Dispatch workers as seats in {team}", "seats"),
+             ("Pause dispatch", "pause"), ("Cycle report", "collect")]
+    hint = (f"Folding and closing stay your own steps: dev-loop fold {project['repo']} <issue>, "
+            f"dev-loop close {project['repo']}")
+    while (verb := choose(f"Development loop · {project['repo']}", verbs, hint)) is not None:
+        if verb == "seats":
+            if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
+                print(f"  Start {team} first, under This project's team.")
+                continue
+            run(tool("ai-work") + ["loop", project["id"], "go"], extra={"LOOP_SEAT_RIG": team})
+        else:
+            run(tool("ai-work") + ["loop", project["id"], verb])
+
+
+# Home -----------------------------------------------------------------------------------
+
+def home():
+    here = project_for(Path.cwd())
+    while True:
+        items = [(f"This project: {name(here)}", lambda: project_menu(here))] if here else []
+        items += [("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
+                  ("Morty, personal", lambda: role_menu("morty")), ("Neo, this machine", lambda: role_menu("neo")),
+                  ("Teams", teams_menu), ("Accounts and setup", accounts_menu)]
+        bad = accounts.conflicts(os.environ)
+        hint = ("This shell carries provider overrides, so launches will refuse: " + ", ".join(bad)
+                if bad else "Enter goes back, q quits, text filters a list.")
+        pick = choose("AI environment", items, hint)
+        if pick is None:
+            return
+        pick()
+
+
+def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    clean_environment()
+    try:
+        projects_menu(" ".join(argv)) if argv else home()
+    except (Quit, KeyboardInterrupt):
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -142,6 +142,25 @@ elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
         self.assertNotEqual(self.call('start', 'iztac', '--cwd', str(folder), '--account', 'openai-apple').returncode, 0)
 
 
+    def test_iztac_rig_takes_a_project_name(self):
+        folder = self.root / 'engagement'
+        folder.mkdir()
+        result = self.call('start', 'iztac', '--cwd', str(folder), '--rig', 'iztac-research-agent')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        up = [r['args'] for r in self.records() if r['args'][0] == 'up'][-1]
+        spec = Path(up[1]).read_text()
+        self.assertIn('name: iztac-research-agent\n', spec)
+        self.assertNotIn('local:', spec)
+        self.assertIn('integrations/openrig/agents/overseer', spec)
+        self.env['RIGS'] = json.dumps([{'name': 'iztac-research-agent'}])
+        self.call('start', 'iztac', '--cwd', str(folder), '--rig', 'iztac-research-agent')
+        self.assertEqual([r['args'] for r in self.records() if r['args'][0] == 'up'][-1],
+                         ['up', 'iztac-research-agent', '--existing'])
+        for bad in (['start', 'codex', '--cwd', str(folder), '--rig', 'x'],
+                    ['start', 'iztac', '--cwd', str(folder), '--rig', 'Bad Name']):
+            self.assertEqual(self.call(*bad).returncode, 2)
+
+
 class WorkerSeats(unittest.TestCase):
     """add-worker and remove-worker against a real Git worktree and the fake rig."""
     call = WorkspaceLauncherTests.call

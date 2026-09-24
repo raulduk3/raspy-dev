@@ -280,7 +280,8 @@ def main():
                         help="iztac starts the control rig: a control seat, a Codex overseer and an "
                              "empty workers pod, from an engagement folder outside the repository")
     parser.add_argument("--cwd", type=Path, help="Explicit working directory for a new control seat")
-    parser.add_argument("--rig", help="The running rig a worker seat joins or leaves")
+    parser.add_argument("--rig", help="The running rig a worker seat joins or leaves; with start iztac, "
+                                      "the new control rig's name, one per project")
     parser.add_argument("--shared", action="store_true", help="Attach an already configured kernel terminal; never boot one")
     parser.add_argument("--account", choices=ACCOUNTS,
                         help="Resolve and pin one native account for this seat through the account "
@@ -289,6 +290,10 @@ def main():
     workers = args.action in ("add-worker", "remove-worker")
     if workers and (not args.rig or not args.cwd):
         parser.error(f"{args.action} requires --rig and --cwd")
+    if args.rig and not workers and not (args.action in ("plan", "start") and args.runtime == "iztac"):
+        parser.error("--rig names a worker's rig, or an iztac control rig")
+    if args.rig and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", args.rig):
+        parser.error("--rig must be lowercase letters, digits and hyphens")
     if args.action == "add-worker" and args.runtime not in ("claude", "codex"):
         parser.error("add-worker requires a claude or codex runtime")
     if args.action in ("plan", "start") and (not args.runtime or not args.cwd):
@@ -346,7 +351,7 @@ def main():
         account_plan = resolve_account_plan(args.account, args.runtime, args.cwd.resolve(), env, parser)
         name = f"development-{args.runtime}-{args.account}"
     else:
-        name = f"development-{args.runtime}"
+        name = args.rig or f"development-{args.runtime}"
 
     inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
     if isinstance(inventory, dict):
@@ -376,6 +381,13 @@ def main():
             member = account_plan["member"]
             spec_path = write_generated_spec(name, member["runtime"], member["cwd"], member.get("config_home"))
             command = ["up", str(spec_path), "--cwd", str(args.cwd.resolve())]
+        elif args.rig:
+            # Same template under the project's own name. Written to the state directory,
+            # so its local: agent refs become absolute, as render_openrig_spec explains.
+            template = (ROOT / "integrations/openrig/iztac.yaml").read_text()
+            template = template.replace("name: development-iztac\n", f"name: {name}\n", 1).replace(
+                "agent_ref: local:agents/", "agent_ref: path:" + str(ROOT / "integrations/openrig/agents") + "/")
+            command = ["up", str(write_state_file(f"{name}.yaml", template)), "--cwd", str(args.cwd.resolve())]
         else:
             command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
     run(*command, "--plan")
