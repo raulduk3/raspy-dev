@@ -58,3 +58,32 @@ not OS isolation: same-user shell access can still read accessible files. It als
 does not prove an authenticated model selects relevant memories correctly.
 
 `node integrations/pi/check-role-context.mjs` verifies all five role/scope combinations from two unrelated invoking directories using the installed Pi loader. It demonstrates context selection and paths, not authenticated execution, native resume, account selection, process ownership or OpenRig integration. The OpenAI Apple Pi auth profile still lacked an `openai-codex` credential at the latest local check; Codex authentication is separate.
+
+## Persistent role sessions
+
+`integrations/pi/role-session.mjs` constructs a real Pi `AgentSession` using the
+explicit role resources. Its caller supplies the already selected `modelRuntime`,
+model and account reference; it does not choose credentials, infer login identity,
+or create a second account service. The reference is an association, not proof of
+authenticated account identity.
+
+New native transcripts use `conversationHome/native/pi`. A native custom entry
+records the conversation ID, role and account reference. Resume requires an exact
+existing file in that directory, matching stored association and workspace.
+Unbound historical Pi transcripts need a deliberate adoption procedure; this
+component does not silently relabel them. An account change needs an explicit
+handover rather than changing the stored reference behind an active session.
+
+`node integrations/pi/check-role-session.mjs` runs the real SDK offline, writes
+a native fixture transcript using Pi's APIs, resumes its original message, checks
+account/conversation/outside-path rejection, and confirms existing bytes remain
+unchanged. Fixture assistant text is not an inference result. Pi delays creating
+the transcript file until an assistant message exists; an empty session object
+does not establish persisted history.
+
+This component is not yet the terminal launcher. The launcher must hold exclusive
+writer ownership while resuming a file, connect the verified account selection,
+and handle native TUI new/resume/fork/import transitions without losing the role
+and conversation bounds. Authenticated inference, terminal interaction and
+concurrent-writer/recovery acceptance remain open. Do not expose an unrestricted
+native TUI around this factory and assume those transitions are already governed.
