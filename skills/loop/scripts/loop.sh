@@ -262,7 +262,10 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
     done
     export DEV_PLATFORM_ENV_PASS
     export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${LOOP_BG_WAIT_CEILING_MS:-900000}"
-    nohup python3 "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
+    # Detach the supervisor too: tool cleanup may terminate the launcher's process group.
+    # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
+    python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
+      "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
       claude --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
@@ -273,7 +276,21 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
         "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
         "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
         "Bash(bash $HOOKS/check-once.sh*)" \
-      < /dev/null > "$out/workers/$i.log" 2>&1 & echo $! > "$out/workers/$i.pid" )
+      <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+pid_path, log_path, *command = sys.argv[1:]
+with open(log_path, 'w') as log:
+    supervisor = subprocess.Popen([sys.executable, *command], stdin=subprocess.DEVNULL,
+                                  stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+target = Path(pid_path)
+tmp = target.with_suffix('.pid.tmp')
+tmp.write_text(str(supervisor.pid) + '\n')
+tmp.replace(target)
+PY
+  )
   echo "#$i -> $branch ($model) pid $(cat "$out/workers/$i.pid")"
 }
 
