@@ -129,6 +129,13 @@ class Menu(unittest.TestCase):
         self.assertTrue(self.runs(back)[0].endswith(f'{launch} --account openai-apple --resume {apple.resolve()}'))
         self.assertTrue(self.runs(again)[0].endswith(f'{launch} --account openai-gmail --resume latest'))
 
+    def test_sign_in_opens_the_native_or_pi_login_for_the_chosen_account(self):
+        native = self.drive(self.menu.accounts_menu, '2', '4')
+        pi = self.drive(self.menu.accounts_menu, '3', '4')
+        self.assertTrue(self.runs(native)[0].endswith('bin/ai-login openai-gmail'))
+        self.assertTrue(self.runs(pi)[0].endswith('bin/ai-login openai-gmail --client pi'))
+        self.assertTrue(Path(self.runs(pi)[0].split()[1]).is_file())
+
     def test_a_project_team_starts_outside_the_repository_under_its_own_name(self):
         with mock.patch.object(self.menu, 'rigs', return_value=[]), \
                 mock.patch.object(self.menu, 'seats', return_value=[]):

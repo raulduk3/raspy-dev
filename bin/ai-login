@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Guide native subscription sign-in and verified enrollment in a local terminal."""
+import argparse
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'lib'))
+from ai_ecosystem import accounts, environment_service
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('account', choices=environment_service.ACCOUNTS)
+    parser.add_argument('--client', choices=('codex', 'claude', 'pi'))
+    parser.add_argument('--registry', type=Path, default=Path.home() / '.config/dev-platform/accounts.json')
+    args = parser.parse_args()
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        parser.error('Open ai-login in your own interactive terminal; login stays out of agent chat.')
+    client = args.client or accounts.runtime(args.account)
+    if client not in ('pi', accounts.runtime(args.account)):
+        parser.error('Client does not match this account provider.')
+    data = accounts.load(args.registry)
+    if client != 'pi':
+        binding = data['bindings'].get(args.account)
+        if binding and accounts.status(data, args.account)['identity'] == 'verified':
+            print(f'{args.account}: existing {client} login verified. No new login needed.')
+            return 0
+        # Existing bindings keep their original store, including native-default semantics.
+        if binding:
+            home = accounts.home_for(data, args.account)
+            native_default = binding.get('native_default', False)
+        else:
+            prepared = accounts.prepare_login(args.account, Path.home() / '.local/share/dev-platform/accounts')
+            home, native_default = Path(prepared['native_home']), False
+        env = accounts.environment(args.account, home, native_default)
+        command = ['codex', 'login'] if client == 'codex' else ['claude', 'auth', 'login', '--claudeai']
+        print(f'Opening {client} sign-in for {args.account}. Choose that account in the browser.', flush=True)
+        result = subprocess.run(command, env=env)
+        if result.returncode:
+            return result.returncode
+        native = accounts.probe(args.account, home, native_default=native_default)
+        email = native.get('email')
+        if not email:
+            raise ValueError('Native client did not report an identity; enrollment was not changed.')
+        print(f'Native client reports: {email}')
+        if binding and binding['expected_email'].casefold() != email.casefold():
+            raise ValueError('This is a different identity from the existing binding. Original binding preserved.')
+        duplicate = next((name for name, value in data['bindings'].items()
+                          if name != args.account and accounts.runtime(name) == client
+                          and value.get('expected_email', '').casefold() == email.casefold()), None)
+        if duplicate:
+            raise ValueError(f'The browser signed into {duplicate}, not {args.account}. '
+                             'No enrollment changed. Retry and use a browser profile signed into the intended account.')
+        if input(f'Use this identity for {args.account}? [y/N] ').strip().lower() != 'y':
+            print('Login retained in its native profile; account registry unchanged.')
+            return 1
+        return accounts.main(['--registry', str(args.registry), 'bind', args.account,
+                              '--home', str(home), '--expected-email', email,
+                              *(['--native-default'] if native_default else [])])
+    plan = environment_service.profile_plan('pi', args.account,
+        Path.home() / '.local/share/dev-platform/accounts', prepare=True)
+    if not plan['native_login_argv']:
+        raise ValueError('Pinned Pi runtime is missing.')
+    env = accounts.environment(args.account, Path(plan['profile_home']))
+    env.pop('CODEX_HOME', None)
+    env.pop('CLAUDE_CONFIG_DIR', None)
+    env.update(plan['environment'])
+    print(f'Pi profile: {args.account}. Use /login and choose the matching provider/account; then exit Pi.', flush=True)
+    return subprocess.run(plan['native_login_argv'], env=env, cwd=plan['profile_home']).returncode
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except ValueError as error:
+        sys.exit(str(error))
+    except (EOFError, KeyboardInterrupt):
+        sys.exit('Setup cancelled. Existing account bindings retained.')
+    except (OSError, subprocess.SubprocessError):
+        sys.exit('Login/enrollment did not complete. Inspect the native terminal result; existing registry retained.')
