@@ -103,6 +103,90 @@ On disk:
 ~/.config/herdr/                          herdr's server socket and saved layout
 ```
 
+## How an agent is told what to do
+
+An agent's instructions come from layers. Each layer is a file or a message, and each has
+one owner.
+
+| Layer | Where it comes from | Reaches |
+| --- | --- | --- |
+| Account instructions | `CLAUDE.md` or `AGENTS.md` in the account's home. `ai-profile` copies the default home's file into the isolated homes. | Every session and seat running as that account |
+| Project instructions | The repository's own `AGENTS.md` or `CLAUDE.md` | Anything working in that checkout or one of its worktrees |
+| Seat guidance | The agent definition a seat uses (`integrations/openrig/agents/<agent>/guidance/role.md`). OpenRig merges it into the seat folder's `CLAUDE.md` or `AGENTS.md` as a managed block. | That seat only |
+| OpenRig culture | OpenRig's default culture file, merged the same way | Every seat |
+| Identity message | OpenRig types a short "which seat you are" message once the agent is ready | Every seat, at start |
+| A task | A worker's `.worker-brief.md`, written by the loop into its worktree | That worker, when told to start |
+| Role resources | For Morty, Neo and Iztac: shared session entry, the role's identity, its memory, and for Iztac the project's own instructions and the Iztac engineering skill | That role's Pi sessions |
+
+A rig spec can set seat instructions at three levels, the whole rig, one pod or one seat,
+and they add up. Each level can carry files and actions:
+
+- **A file with `delivery_hint: guidance_merge`** becomes standing instructions, like the seat guidance above.
+- **A file with `delivery_hint: skill_install`** installs a skill into that seat's folder.
+- **A file or action with `send_text`** is a prompt typed into the agent after it starts. That is how OpenRig's own templates brief their agents, and why they start working on their own.
+- **A `slash_command` action** runs one of the agent's commands at start.
+
+Who may talk to whom is declared separately, as **edges** between seats, inside a pod or
+across pods. Seats talk through `rig send` and OpenRig's queue.
+
+The platform's three agents use none of the prompt options. Control, overseer and worker each
+get standing guidance only, and they wait for you. Their rigs declare no edges. The only
+message typed into them automatically is OpenRig's identity message.
+
+## Skills: where they live and who sees them
+
+A skill is a folder with a `SKILL.md`. An agent sees a skill only if it sits in the skills
+folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
+`~/.agents/skills` is the shared folder the default homes link through.
+
+| Where skills come from | What |
+| --- | --- |
+| The platform release, `skills/` | `bounded-decisions`, `deploy-verify`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `session-entry`, `spec-lint`, `staging-census` |
+| Iztac's own resources | `iztac-engineering`, loaded only into Iztac's Pi sessions |
+| OpenRig | `openrig-skills`, vendored into the default Claude home and the shared folder |
+| The clients themselves | Claude desktop's synced skills; Codex's own |
+
+| Runs as | Platform skills it sees |
+| --- | --- |
+| `anthropic-gmail` (`~/.claude`) | All ten |
+| `openai-apple` (`~/.codex`) | All ten |
+| `anthropic-apple` (isolated) | None. Only Claude desktop's synced skills. |
+| `openai-gmail` (isolated) | None |
+| An OpenRig seat | Whatever its account's home has, plus any `skill_install` in its agent. The platform's agents install none. |
+| Morty, Neo, Iztac (Pi) | Skill discovery is off. Session entry arrives as instructions; Iztac also gets its engineering skill. |
+
+Two consequences. A seat or session on an isolated account does not have `loop`,
+`development-workspace` or the others as skills; session entry still reaches it, because its
+instructions point at the default home's copy. And the links are not uniform: some point at
+an older release folder and some at the development checkout, so the version an agent reads
+depends on the link, not on what is installed.
+
+## Every tool, and how they connect
+
+Each tool owns one thing. The table shows what it reads and what it hands work to.
+
+| Tool | Owns | Reads | Calls |
+| --- | --- | --- | --- |
+| `ai` | Nothing; the front door | projects, sessions, conversations, usage, rigs, herdr | every command below |
+| `ai-account` | Which account is selected; account bindings | `accounts.json`, native login status | `claude`, `codex` |
+| `ai-environment` | Launch plans: may this account run now? | bindings, live quota | `ai-account run` |
+| `ai-login` | Guided native sign-in | bindings | `claude`, `codex`, `pi` |
+| `ai-profile` | Equipping isolated homes: hooks, instructions, rules, status line | the default homes, `hooks/` | nothing |
+| `ai-usage` | The usage readout | Codex live, Claude status-line caches, OpenRig seat caches | nothing |
+| `ai-env doctor` | The setup check | commands, skill links, Laya, tmux | nothing |
+| `ai-work` | The project catalog | `repos.conf`, `~/Dev`, the session index | the loop |
+| `dev-loop` | Day branches, worker worktrees, the ledger, fold and close | GitHub issues through `ghx` | workers, or `dev-workspace add-worker` for seats |
+| `ai-session` | The session index and role conversations | native transcripts in every home | `claude --resume`, `codex resume` |
+| `ai-role` | Launching Morty, Neo and Iztac | conversations, Pi profiles, role identities | Pi |
+| `ai-memory`, `ai-history`, `journal`, `harvest` | Role memory, preserved history, the journal, time tracking | their own stores | nothing |
+| `dev-workspace` | Starting rigs, seating and unseating workers | account plans, the loop's worktrees | `ai-environment`, `rig` |
+| `rig` | OpenRig: rigs, pods, seats, snapshots, queue | its database in `~/.openrig` | `tmux`, `herdr`, `claude`, `codex` |
+| `tmux` | The terminal each seat runs in | nothing | the agent |
+| `herdr` | Spaces and tiles | nothing | `tmux attach` in each tile |
+| `hooks/` | The guard before tool use, the check at stop, formatting | the command about to run | `check-once` |
+| `check`, `new-repo` | The platform's tests; new repositories from templates | `templates/` | `git`, `gh` |
+| `claude`, `codex`, `pi` | The agents themselves | their home, their folder | tools, through their own permission and sandbox rules |
+
 ## What OpenRig writes into your project folder, and why
 
 When a seat starts in a folder, OpenRig places three small files there:
