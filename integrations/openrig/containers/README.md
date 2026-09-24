@@ -33,6 +33,21 @@ python3 integrations/openrig/containers/check.py /absolute/private/account-envir
 
 This checks actual containers, pinned versions, non-root execution, separate networks, declared mounts, localhost publication, health and transport rejection of missing/other-account tokens. It does not prove native login, worker startup, message delivery or resume.
 
+For offline Pi component verification, build a separate candidate tag without
+recreating the account environments, then run:
+
+```sh
+docker build -t dev-platform-account-env:pi-0.87.1 integrations/openrig/containers
+python3 integrations/openrig/containers/check-pi-image.py dev-platform-account-env:pi-0.87.1
+```
+
+The checker exports committed HEAD, resolves the image to an immutable ID, and
+runs the real role, history, session and PTY checks as the image's non-root user.
+Its disposable containers have networking disabled, a read-only source mount and
+temporary storage; they receive no account homes or control tokens and start no
+OpenRig daemon. This checks Linux image compatibility, not authentication,
+host-bind-mount conversation locking, account handover or production launch.
+
 ## Native login and launch
 
 Use Compose `exec` to enter the chosen running environment. For Codex, run `codex login --device-auth`; for Claude, start `claude` and complete its native `/login` flow. The human completes browser authentication. Never paste credentials into chat, the image, Git, or Compose configuration.
