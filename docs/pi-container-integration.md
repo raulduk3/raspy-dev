@@ -84,7 +84,10 @@ This capability placement remains a design/acceptance item, not a settled claim.
 - Demonstrate a checkpointed handover to another verified account without
   relabeling the old native session or copying its credentials.
 
-The macOS offline PTY and flock tests are useful component evidence, not evidence
-that Docker Desktop bind mounts, container restart or cross-environment handover
-already satisfy these checks. Leave authentication/approval steps pending while
+The Linux image offline PTY and lifecycle checks now pass. The separate
+`check-conversation-mount.py` check also proves concurrent-writer refusal and
+lock recovery after SIGKILL across disposable containers on a real Docker Desktop
+bind mount, with unchanged fixture data and no lock-file replacement. Native Pi
+transcript recovery across recreated account containers and authenticated
+cross-account handover remain unverified. Leave authentication/approval steps pending while
 the owner sleeps. Do not build or launch around another task's sandbox denial.

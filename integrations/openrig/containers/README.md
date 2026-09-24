@@ -50,6 +50,20 @@ temporary storage; they receive no account homes or control tokens and start no
 OpenRig daemon. This checks Linux image compatibility, not authentication,
 host-bind-mount conversation locking, account handover or production launch.
 
+Check the shared-conversation lock separately:
+
+```sh
+python3 integrations/openrig/containers/check-conversation-mount.py dev-platform-account-env:pi-0.87.1
+```
+
+This uses the committed launch primitive with two disposable containers mounting
+one temporary host directory. It verifies concurrent-writer refusal, recovery
+after SIGKILL, the same lock-file inode and unchanged existing fixture data.
+It passed on this machine's Docker Desktop bind mounts. It uses the host user's
+numeric UID/GID as the account environments do, without mounting their homes or
+touching their processes. This verifies the lock boundary, not native transcript
+recovery, distributed/network-filesystem locking or authenticated account handover.
+
 ## Native login and launch
 
 Use Compose `exec` to enter the chosen running environment. For Codex, run `codex login --device-auth`; for Claude, start `claude` and complete its native `/login` flow. The human completes browser authentication. Never paste credentials into chat, the image, Git, or Compose configuration.
