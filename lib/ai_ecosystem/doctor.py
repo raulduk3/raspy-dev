@@ -1,6 +1,6 @@
 """ai-env doctor: read-only environment diagnostics. Never installs, restarts or edits config.
 
-Each check reports one state: ok, missing, unavailable, unverified, unsupported or broken.
+Each check reports one state: ok, missing, stale, unavailable, unverified, unsupported or broken.
 Output carries names and states only, never credentials or full configuration.
 """
 import argparse
@@ -23,6 +23,12 @@ LAYA_PROBE = {
 
 def check_commands():
     return {c: {'state': 'ok' if shutil.which(c) else 'missing'} for c in COMMANDS}
+
+
+def stale_release(skill, platform):
+    """True when a skill resolves into a release other than the platform's own."""
+    release = skill.resolve().parent.parent
+    return release.parent.name == 'releases' and release != platform
 
 
 def check_skills(home, platform):
@@ -52,10 +58,16 @@ def check_skills(home, platform):
                 if source.is_file() and client.is_file() and source.resolve() != client.resolve():
                     divergent.append(name)
         missing = sorted(name for name in expected if not (folder / name / 'SKILL.md').is_file())
+        # A link into another release keeps an agent on skills the activated release replaced.
+        # A Workshop override lives outside releases/ and stays healthy.
+        stale = sorted(name for name in expected if (folder / name / 'SKILL.md').is_file()
+                       and stale_release(folder / name, platform_skills.parent))
         out[rel] = {'state': 'broken' if broken or divergent else
-                           'missing' if missing or canonical_missing else 'ok',
-                    'broken': broken, 'divergent': divergent, 'missing': missing,
+                           'missing' if missing or canonical_missing else 'stale' if stale else 'ok',
+                    'broken': broken, 'divergent': divergent, 'missing': missing, 'stale': stale,
                     'canonical_missing': canonical_missing}
+        if stale:
+            out[rel]['fix'] = f'link each to {platform}/skills/<name> so it follows the activated release'
     return out
 
 
