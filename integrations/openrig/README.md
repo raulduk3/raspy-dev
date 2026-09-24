@@ -20,7 +20,7 @@ openrig-runtime/node-v24.14.0-darwin-arm64/bin/node
 ```
 
 Activate a checked platform release under `~/.local/share/dev-platform/current`
-and link its `bin/dev-workspace` and `bin/ai-work` into `~/.local/bin` without
+and link its `bin/dev-workspace`, `bin/ai-work`, and `bin/rig` into `~/.local/bin` without
 replacing unrelated files. Publish the shared
 `development-workspace` skill through Skill Workshop; this directory deliberately
 does not fork its body. Install Claude/Codex and authenticate through their native
@@ -90,6 +90,29 @@ The launcher removes inherited `CODEX_HOME` and `CODEX_THREAD_ID` from its child
 environment so standalone Codex uses its native personal store. It does not
 rewrite either store or migrate OpenClaw-owned conversations. An already running
 daemon retains its own environment; changing a caller cannot repair that daemon.
+
+## Native tool access from coding sessions
+
+A sandboxed coding shell may not reach the loopback daemon over HTTP. Keep the
+shell sandbox intact; do not enable blanket network access to fix that symptom.
+OpenRig provides its own stdio MCP server, which the harness can launch through
+its supported MCP configuration. Inspect existing MCP registrations first; keep
+an existing correct `openrig` registration instead of creating a duplicate.
+Register in the personal harness configuration, not an OpenClaw-managed Codex
+home or a product repository:
+
+```sh
+codex mcp add openrig -- "$HOME/.local/bin/rig" mcp serve
+claude mcp add --scope user --transport stdio openrig -- "$HOME/.local/bin/rig" mcp serve
+```
+
+Run those commands from the normal personal login environment (without an
+inherited managed `CODEX_HOME`). Reopen the coding session after registration
+and use the native `rig_ps` tool to confirm daemon access. Successful registration
+alone is not proof of connectivity. A successful read proves discovery and
+transport only, not message acknowledgement, worker steering, loop execution,
+or authorization for any subsequent action. The tool server does not replace
+the existing loop's dispatch authority.
 
 ## Boundaries and verification
 
