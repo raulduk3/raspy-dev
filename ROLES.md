@@ -28,12 +28,31 @@ not a tether.
 | Owner | Decides, reviews locally, commits, pushes, opens and merges pull requests, tags, authorizes every deploy, posts on the ledger | |
 | Editor with chat (VS Code, Copilot, Claude Code and Codex extensions) | Surgical work with the owner present: read the diff, edit, run the checks, draft the commit message, review a checked-out pull request, dispose of review findings | Unattended multi-hour runs (headless coding agent). Anything on a host (operations session). Pushing to protected branches, merging, marking ready, approving (owner). Scheduling or memory (assistant) |
 | Coding agent, headless (Claude Code in the background, Codex exec, cloud coding agents) | One issue, one worktree, one branch. Inside the loop: a local branch from the day branch, the check recorded once, a `.worker-pr.md` body with the template sections, then stop; the owner reviews and folds it. Outside the loop: one draft pull request with the template body and the check output. Runs from a written brief with a scope and a stop condition | Choosing its own issue (the loop plans). Touching another worktree. Pushing, opening a pull request or commenting from inside the loop. Pushing to protected branches, merging, deploying. Anything the brief's scope excludes: it stops and says so in `.worker-blocked.md` (loop) or on the issue |
-| Desktop agent session (Claude desktop, Cowork) | The owner's second editor surface, used freely: phased builds from a written prompt with a gate per phase; surgical work in a worktree when the owner prefers chat-first over editor-first; intake from meeting notes and transcripts dropped into the session, using the `intake` skill; pull request walkthroughs (`gh pr checkout`, explain the diff, reproduce review findings). Runs the same hooks and skills as the terminal, so the same commands are refused | Starting or steering the loop (the assistant owns the ledger and the gate). Merging, marking ready, tagging, deploying: the owner does those in the editor or terminal. Holding work that never becomes a pull request |
-| Implementation-tier agent (Codex, from the ChatGPT desktop app or the CLI) | A bounded change with a deterministic check behind it, in its own worktree, ending in a draft pull request; `codex review` on any pull request as evidence, never as approval; cloud tasks on the owner's own repositories. Runs under the Codex rules and the workspace-write sandbox | Judgment work: specification, decisions, review verdicts. Any change with no check that would catch a wrong answer. Starting or steering the loop |
+| Desktop agent session (Claude desktop, Cowork) | The owner's second editor surface, used freely: phased builds from a written prompt with a gate per phase; surgical work in a worktree when the owner prefers chat-first over editor-first; intake from meeting notes and transcripts dropped into the session, using the `intake` skill; pull request walkthroughs (`gh pr checkout`, explain the diff, reproduce review findings). Runs the same hooks and skills as the terminal, so the same commands are refused | Unrequested loop dispatch or a competing ledger. Merging, marking ready, tagging, deploying: the owner does those in the editor or terminal. Holding work that never becomes a pull request |
+| Implementation-tier agent (Codex, from the ChatGPT desktop app or the CLI) | A bounded change with a deterministic check behind it, in its own worktree, ending in a draft pull request; `codex review` on any pull request as evidence, never as approval; cloud tasks on the owner's own repositories. Runs under the Codex rules and the workspace-write sandbox | Judgment work: specification, decisions, review verdicts. Any change with no check that would catch a wrong answer. Unrequested loop dispatch or a competing ledger |
 | Assistant (OpenClaw engineering agent, Iztac) | The morning brief; the loop's start, plan, go, pause, collect and close steps on the owner's word in that session; intake from meetings into decision drafts; read-only host diagnostics; durable memory; drafted text the owner posts. In a personal repository it may push a `type/slug` branch, open a draft pull request and run the loop's `close --push`. May drive any tool on the machine directly for these, under the same refusals | Editing repository code: it opens or names a worktree for the editor or a coding agent instead. Pushing anything in a professional repository. Folding, finishing, marking ready (the owner's terminal verbs). Scheduling worker launches itself (the tick automation is the owner's to enable). Posting as itself on repositories it has no identity in, host mutations without an explicit go in that session, gateway configuration without the owner's go |
 | Personal assistant (OpenClaw, Morty) | Personal coordination, journal custody, time tracking, finances. Reads the engineering agent's sessions, memory and journal lines for billing and context; exchanges messages with it | Engineering, review, gates, approvals, deploys. It holds no authority over engineering work and is never a step in the engineering path |
 | Chat for thinking (ChatGPT desktop, Claude web) | Used freely: research, framing options, second opinions on a specification section, drafting decision text, rehearsing a stakeholder conversation | Code and terminals. Output becomes an issue comment, a decision issue or a spec pull request, posted by the owner. State that stays only in the chat window is lost by design |
 | GitHub | The ledger. Automated review on personal repositories, checks on every pull request, the release lane, the deploy lane on tags | State anywhere else |
+
+## Shared development control
+
+OpenRig is a native coding control surface alongside OpenClaw, Claude Code and Codex.
+All use the `development-workspace` skill and `ai-work` adapter against the existing loop
+ledger. Owner-directed start, plan, steer, go, pause, collect and close retain the loop's
+checks and permissions. An OpenRig seat is a conversation, not another worker dispatcher.
+Opening its TUI or a control seat does not authorize a task, worker launch, or automation.
+
+The organization is group → project → outcome → loop → task → session/attempt.
+Worktrees and historical sessions remain subordinate to their project; organization does
+not delete them. Direct task work must respect current ownership and use an isolated
+worktree when needed. Scope changes and selected sibling changes remain explicit.
+
+This changes where routine control is accepted, not release authority: folding, finishing,
+protected-branch pushes, merging, tagging, deployments, professional posting, and permission
+changes still require the owner's applicable authorization and installed controls. No
+surface may bypass a denied command. Schedules remain opt-in; no surface enables them as
+part of opening a workspace.
 
 ## Personal and professional repositories
 
@@ -57,8 +76,9 @@ keep that safe, and all four are mechanisms already installed:
    The app is the surface; the ledger is still GitHub.
 2. The Claude Code hooks, the platform skills and the Codex rules load in the desktop apps the
    same as in the terminal. A refused command is refused everywhere.
-3. The loop has one coordinator, the assistant. The desktop apps take issues from it or from
-   the owner; they never plan the sprint or write the steer.
+3. The loop has one execution authority and ledger, not one privileged interface. On the
+   owner's direction, OpenRig, OpenClaw, Claude Code and Codex may use the shared `ai-work`
+   adapter to inspect and control that same loop. They do not create a competing queue.
 4. Thinking output leaves the chat window as text on the ledger. If it is worth keeping, it is
    an issue comment, a decision issue or a spec pull request.
 
@@ -96,8 +116,10 @@ pull request bodies and specifications still name no session.
 
 ## Hand-off protocol
 
-When a request lands on the wrong surface, the surface names the owning surface in one line and
-stops. It does not do a smaller version of the work to be helpful. Examples:
+Routine owner-directed development-loop control stays on the current surface through the
+shared adapter; changing interfaces does not create another loop. When a request requires
+capabilities or authority the surface lacks, it names that boundary in one line and stops.
+It does not do a smaller version of the work to be helpful. Examples:
 
 - Editor chat asked to restart a container: "Operations belong to the assistant's read-only
   session, and a restart needs the owner's go there."
