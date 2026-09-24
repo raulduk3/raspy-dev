@@ -6,6 +6,7 @@ import { historyExtension } from './history-tool.mjs';
 import { memoryExtension } from './memory-tool.mjs';
 import { journalExtension } from './journal-tool.mjs';
 import { harvestExtension } from './harvest-tool.mjs';
+import { webFetchExtension } from './web-fetch-tool.mjs';
 
 export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive, memoryState, journalRoot, extensionFactories = [] }) {
   const { agent, scope, binding } = conversation;
@@ -50,7 +51,8 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     cwd, agentDir, settingsManager,
     noExtensions:true, noSkills:true, noPromptTemplates:true, noThemes:true,
     additionalExtensionPaths:[path.join(platformRoot,'integrations/pi/perplexity.ts')],
-    extensionFactories:[...(historyArchive ? [historyExtension({archive:historyArchive,agent})] : []),
+    // Every role can read a public page it has the address for; search finds the address.
+    extensionFactories:[webFetchExtension(), ...(historyArchive ? [historyExtension({archive:historyArchive,agent})] : []),
       ...(memoryState ? [memoryExtension({agent, state:memoryState})] : []),
       ...(journalRoot ? [journalExtension({root:journalRoot, agent})] : []),
       // Hours and invoices belong to the personal role alone.

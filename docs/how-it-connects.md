@@ -284,6 +284,11 @@ The role launcher reads it at each launch and passes it only to that Pi process.
 line ends with `search on` or says why it is off. Claude and Codex sessions use their own
 built-in web search, not Perplexity.
 
+The roles also have `web_fetch`, which reads one public page by its address. It needs no
+key and costs nothing, so they use it whenever they already know the page, and Perplexity
+only to find pages. It refuses local and private network addresses at every redirect, so a
+page cannot point it at services on this machine.
+
 ## What was changed on this machine, and how to undo each
 
 - **OpenRig is a local fork.** Build `0.5.14 (113182b7)` opens herdr views inside the rig's

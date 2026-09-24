@@ -28,7 +28,9 @@ try {
       assert.equal(entries[0].content,fs.readFileSync(entryPath,'utf8'));
       const extensions=result.loader.getExtensions();
       assert.deepEqual(extensions.errors,[]);
-      assert.deepEqual(extensions.extensions.flatMap(e=>[...e.tools.keys()]),['perplexity_search']);
+      // Search and page reading for every role; time tracking for the personal role alone.
+      assert.deepEqual(extensions.extensions.flatMap(e=>[...e.tools.keys()]),
+        ['perplexity_search','web_fetch',...(agent==='morty'?['harvest']:[])]);
       assert(contents.includes('ROLE_IDENTITY'));
       assert.equal(contents.includes('BOUND_PROJECT_CONTEXT'),selected);
       assert(!contents.includes('UNRELATED_PROJECT_CONTEXT'));
