@@ -7,7 +7,7 @@ remain the harness's choice. The existing loop remains execution authority.
 
 ## Repeatable installation
 
-Install the official `openrig@0.5.14` npm package under
+Install the official `@openrig/cli@0.5.14` npm package under
 `~/.local/share/dev-platform/openrig-runtime/app` using npm's `--prefix` option
 and an exact package version. Retain its lockfile. Install the official Node
 24.14.0 `darwin-arm64` distribution under the same runtime root as

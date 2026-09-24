@@ -28,12 +28,14 @@ with open(os.environ['CALLS'], 'a') as f:
     f.write(json.dumps({'args':a, 'codex_home':os.environ.get('CODEX_HOME')})+'\\n')
 if a == ['--version']: print('0.5.14 (cc75efdd)')
 elif a == ['daemon', 'status']: print(os.environ.get('DAEMON_STATE', 'Daemon running on port 4400 (pid 1)'))
-elif a[0] == 'ps': print(os.environ.get('RIGS', '[]'))
+elif a == ['ps', '--json', '--include-archived']: print(os.environ.get('RIGS', '[]'))
+elif a[0] == 'ps': sys.exit(2)
 elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
 ''')
         rig.chmod(0o755)
         self.env = dict(os.environ, DEV_WORKSPACE_RUNTIME=str(self.root), CALLS=str(self.log),
-                        CODEX_HOME='/not-the-personal-store')
+                        CODEX_HOME='/not-the-personal-store',
+                        DEV_PLATFORM_PERSONAL=str(self.root / 'personal.conf'))
 
     def call(self, *args):
         return subprocess.run([str(LAUNCHER), *args], env=self.env, text=True, capture_output=True)
@@ -87,3 +89,25 @@ elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
         self.env['RIGS'] = json.dumps([{'name':'development-codex', 'isArchived':True}])
         self.assertNotEqual(self.call('start', 'codex', '--cwd', str(self.root)).returncode, 0)
         self.assertFalse(any(r['args'][0] == 'up' for r in self.records()))
+
+    def test_new_seat_blocks_professional_checkout_but_allows_plan(self):
+        repo = self.root / 'professional'
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+        result = self.call('start', 'codex', '--cwd', str(repo))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('managed context', result.stderr)
+        self.assertFalse(any(r['args'][0] == 'up' for r in self.records()))
+        self.assertEqual(self.call('plan', 'codex', '--cwd', str(repo)).returncode, 0)
+        commands = [r['args'] for r in self.records() if r['args'][0] == 'up']
+        self.assertEqual(len(commands), 1)
+        self.assertIn('--plan', commands[0])
+
+    def test_new_seat_accepts_personal_repo_symlink_identity(self):
+        repo = self.root / 'personal'
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+        alias = self.root / 'alias'
+        alias.symlink_to(repo, target_is_directory=True)
+        (self.root / 'personal.conf').write_text(str(alias) + '\n')
+        result = self.call('start', 'codex', '--cwd', str(repo))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([r for r in self.records() if r['args'][0] == 'up']), 2)

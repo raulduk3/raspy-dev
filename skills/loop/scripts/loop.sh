@@ -146,15 +146,8 @@ tier_model() {  # issue labels -> Claude Code model (MODELS.md tiers)
     *) echo "$WORKER_MODEL" ;;
   esac
 }
-running_workers() {  # "pid issue" for live workers: this ledger and the pre-ledger layout
-  local pf pid i
-  for pf in "$ctl"/*/workers/*.pid "$state"/*/worker-*.pid; do
-    [ -f "$pf" ] || continue
-    [ ! -f "${pf%.pid}.exit" ] || continue
-    pid="$(cat "$pf")"; i="$(basename "$pf")"; i="${i%.pid}"; i="${i#worker-}"
-    ps -p "$pid" >/dev/null 2>&1 && echo "$pid $i"
-  done
-  return 0
+running_workers() {  # "pid issue" only for verified supervisors owned by this repository
+  python3 "$here/worker-run.py" --running "$ctl" "$(repo_dir)"
 }
 worker_running() { running_workers | grep -qE " $1\$"; }
 live_worktrees() {  # cwd of every running claude process
@@ -304,6 +297,8 @@ case "$verb" in
   go|tick|resume)
     mkdir "$ctl/dispatch-lock" 2>/dev/null || { echo "loop: another dispatch holds $ctl/dispatch-lock" >&2; exit 3; }
     trap 'rmdir "$ctl/dispatch-lock"' EXIT
+    # Validate ownership outside a pipeline: set -e must stop on ambiguous identity.
+    running_workers >/dev/null
     ;;
 esac
 

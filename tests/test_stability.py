@@ -300,9 +300,20 @@ class LoopTests(Fixture):
     def test_resume_respects_cap_without_launch(self):
         self.setup_remote(); self.loop('start')
         day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
-        (self.ctl() / day / 'workers/1.pid').write_text(str(os.getpid()))
-        result = self.loop('resume', '2', env=dict(self.env, LOOP_CAP='1'))
-        self.assertIn('cap reached', result.stdout)
+        result_path = self.ctl() / day / 'workers/1.exit'
+        process = subprocess.Popen([sys.executable, str(PLATFORM / 'skills/loop/scripts/worker-run.py'),
+                                    '5', str(result_path), '--', sys.executable, '-c',
+                                    'import time; time.sleep(3)'], cwd=self.repo, env=self.env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            result_path.with_suffix('.pid').write_text(str(process.pid))
+            deadline = time.monotonic() + 2
+            while not result_path.with_suffix('.identity.json').exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            result = self.loop('resume', '2', env=dict(self.env, LOOP_CAP='1'))
+            self.assertIn('cap reached', result.stdout)
+        finally:
+            process.wait(timeout=7)
 
     def test_close_uses_base_and_accurate_verification(self):
         self.setup_remote(); self.loop('start')

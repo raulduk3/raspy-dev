@@ -62,7 +62,7 @@ def main():
         os.execve(str(rig), [str(rig), "tui", *(["--shared"] if args.shared else [])], env)
 
     name = f"development-{args.runtime}"
-    inventory = json.loads(run("ps", "--json", "--all-rigs", "--include-archived", capture=True).stdout)
+    inventory = json.loads(run("ps", "--json", "--include-archived", capture=True).stdout)
     if isinstance(inventory, dict):
         if inventory.get("truncated"):
             parser.exit(2, "Rig inventory is truncated; inspect it before starting another seat.\n")
@@ -76,6 +76,24 @@ def main():
         command = ["up", name, "--existing"]
         print(f"Reusing {name}; its persisted session keeps its original task and working directory.", flush=True)
     else:
+        if args.action == "start":
+            # Native boot writes managed context into cwd. Never introduce it into
+            # a professional checkout; use an external project-world instead.
+            def common_dir(path):
+                result = subprocess.run(["git", "-C", str(path), "rev-parse",
+                                         "--path-format=absolute", "--git-common-dir"],
+                                        env=env, text=True, capture_output=True)
+                return Path(result.stdout.strip()).resolve() if result.returncode == 0 else None
+            identity = common_dir(args.cwd)
+            if identity is not None:
+                personal = Path(os.environ.get("DEV_PLATFORM_PERSONAL",
+                                               Path.home() / ".config/dev-platform/personal.conf"))
+                entries = personal.read_text().splitlines() if personal.is_file() else []
+                permitted = any(common_dir(Path(line.strip()).expanduser()) == identity
+                                for line in entries if line.strip() and not line.lstrip().startswith("#"))
+                if not permitted:
+                    parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
+                                   "directory, not a professional repository checkout.\n")
         command = ["up", str(ROOT / "integrations/openrig" / f"{args.runtime}.yaml"), "--cwd", str(args.cwd.resolve())]
     run(*command, "--plan")
     if args.action == "start":
