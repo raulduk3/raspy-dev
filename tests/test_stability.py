@@ -449,6 +449,53 @@ class LocalLoopTests(Fixture):
         self.assertIn('CYCLE', self.loop('collect').stdout)
         self.assertIn('read-only', self.loop('tidy').stdout)
 
+    def test_tasks_are_written_numbered_and_checked_where_the_command_runs(self):
+        self.assertEqual(self.loop('tasks').stdout.splitlines(),
+                         ['#1 ready Game rules', '#2 ready Polish', '#3 draft Draft'])
+        self.assertEqual(self.loop('tasks', 'check').stdout.strip(), 'ok: 3 open task(s)')
+        # A task moved to done keeps its number: numbers are never reused.
+        (self.repo / 'docs/tasks/done').mkdir()
+        self.run_cmd('git', 'mv', 'docs/tasks/3-draft.md', 'docs/tasks/done/3-draft.md')
+        self.assertEqual(self.loop('tasks', 'next').stdout.strip(), '4')
+        self.run_cmd('git', 'commit', '-qm', 'chore(tasks): done')
+        # Written in the worktree the command runs in (an intake branch), not the mapped checkout.
+        wt = self.base / 'intake'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'docs/plan', wt)
+        path = self.loop('tasks', 'new', 'Score: keep it', '--scope', 'src/score/', '--depends', '#1',
+                         '--labels', 'enhancement', '--ready', cwd=wt).stdout.strip()
+        self.assertEqual(path, 'docs/tasks/4-score-keep-it.md')
+        self.assertFalse((self.repo / path).exists())
+        self.assertEqual((wt / path).read_text().splitlines()[:6],
+                         ['# Score: keep it', '', 'Status: ready', 'Labels: enhancement',
+                          'Scope: src/score/', 'Depends on: #1'])
+        self.run_cmd('git', 'add', '.', cwd=wt)
+        self.run_cmd('git', 'commit', '-qm', 'docs(tasks): score', cwd=wt)
+        # A second branch that has not seen the first takes the same number; the merge shows it.
+        self.assertEqual(self.loop('tasks', 'new', 'Sound', '--scope', 'src/sound/').stdout.strip(),
+                         'docs/tasks/4-sound.md')
+        self.run_cmd('git', 'add', '.')
+        self.run_cmd('git', 'commit', '-qm', 'docs(tasks): sound')
+        self.run_cmd('git', 'merge', '-q', '--no-ff', '-m', 'merge', 'docs/plan')
+        self.assertIn('more than one task file for #4', self.loop('tasks', 'check', expected=1).stdout)
+        self.loop('tasks', expected=1)
+        self.run_cmd('git', 'mv', 'docs/tasks/4-sound.md', 'docs/tasks/5-sound.md')
+        self.run_cmd('git', 'commit', '-qm', 'fix(tasks): renumber')
+        listed = self.loop('tasks').stdout
+        self.assertIn('#4 ready Score: keep it', listed)
+        self.assertIn('#5 draft Sound', listed)
+        self.assertIn('#4 waits on #1', self.loop('plan').stdout)
+        (self.repo / 'docs/tasks/6-bad.md').write_text('Status: soon\nDepends on: #6, #9, 7\n')
+        problems = self.loop('tasks', 'check', expected=1).stdout
+        for expected in ("no `# ` title heading", "Status must be ready or draft, not 'soon'",
+                         'no Scope: line', 'depends on itself', 'depends on #9, which has no task file',
+                         "Depends on: '7' is not #N"):
+            self.assertIn(expected, problems)
+        self.loop('tasks', 'new', 'No scope', expected=2)
+
+    def test_tasks_refuse_a_github_backed_repository(self):
+        self.configure(base='develop', personal=True, identity='owner')
+        self.assertIn('GitHub issues', self.loop('tasks', expected=2).stdout)
+
 
 class GuardTests(Fixture):
     def guard(self, command, expected):

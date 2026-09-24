@@ -60,6 +60,9 @@
 #                                        day worktree and branch, steer pause           owner
 #   tidy <repo> [--apply]                classify merged and stale branches and
 #                                        worktrees; --apply bundles, then deletes       owner for --apply
+#   tasks <repo> [list|next|check]       local: list the tasks on the base, print the next
+#   tasks <repo> new <title> --scope ..  number, check or write task files in the checkout
+#                                        the command runs in (or the mapped one)        anyone
 #   * one exemption: in a personal repository the assistant may run close --push without --ready.
 #
 # Nothing here pushes to develop or main, merges into them, marks ready, approves or deploys.
@@ -71,7 +74,7 @@ CONF="${DEV_PLATFORM_REPOS:-$HOME/.config/dev-platform/repos.conf}"
 BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] && . "$BRIEF_CONF"
 state="${LOOP_STATE_DIR:-$HOME/.local/state/dev-platform/loop}"
-verb="${1:?status|plan|start|go|pause|resume|tick|collect|fold|close|finish|tidy}"; repo="${2:?owner/repo}"; shift 2
+verb="${1:?status|plan|start|go|pause|resume|tick|collect|fold|close|finish|tidy|tasks}"; repo="${2:?owner/repo}"; shift 2
 CAP="${LOOP_CAP:-3}"
 MAX_TURNS="${LOOP_WORKER_MAX_TURNS:-60}"
 MAX_SECONDS="${LOOP_WORKER_MAX_SECONDS:-1800}"
@@ -721,6 +724,19 @@ EOF
     for b in $(cat "$tmp/local" 2>/dev/null); do git -C "$dir" branch -D "$b" >/dev/null 2>&1 && echo "  deleted $b" || echo "  FAILED $b"; done
     local_mode || git -C "$dir" fetch -q --prune origin
     echo "result: local $(git -C "$dir" for-each-ref refs/heads | wc -l | tr -d ' '), remote $(git -C "$dir" for-each-ref refs/remotes/origin | grep -vc 'origin/HEAD'), worktrees $(git -C "$dir" worktree list | wc -l | tr -d ' ')"
+    ;;
+  tasks)
+    local_mode || { echo "loop: $repo keeps its tasks as GitHub issues; tasks is for local repositories" >&2; exit 2; }
+    # Write where the command runs when that is a worktree of this repository (an intake branch).
+    dir="$(repo_dir)"; here_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$here_top" ] && [ "$(repository_identity "$here_top")" = "$(repository_identity "$dir")" ]; then dir="$here_top"; fi
+    sub="${1:-list}"; [ $# -eq 0 ] || shift
+    case "$sub" in
+      list) listed="$(python3 "$here/loop-tasks.py" "$dir" "$base_ref" issues)"
+            jq -r '.[] | "#\(.number) \(if any(.labels[]; .name == "sprint-ready") then "ready" else "draft" end) \(.title)"' <<<"$listed" ;;
+      next|new|check) python3 "$here/loop-tasks.py" "$dir" "$base_ref" "$sub" "$@" ;;
+      *) echo "loop: tasks list|next|new|check" >&2; exit 2 ;;
+    esac
     ;;
   *) echo "unknown verb $verb" >&2; exit 2 ;;
 esac
