@@ -718,9 +718,22 @@ def iztac_menu():
         role_menu("iztac", project)
 
 
+CURRENT = HOME / ".local/share/dev-platform/current"
+
+
+def upgrade_if_released():
+    """A menu left open across an update would keep running the old code, and its layout
+    rules would fight the new ones. At the home screen, a safe point, it restarts itself
+    into the activated release."""
+    installed = CURRENT.resolve() / "bin/ai"
+    if not DRY and installed.is_file() and CURRENT.resolve() != ROOT:
+        os.execv(sys.executable, [sys.executable, str(installed)])
+
+
 def home():
     here = project_for(Path.cwd())
     while True:
+        upgrade_if_released()
         items = [(f"This project: {name(here)}", lambda: project_menu(here))] if here else []
         items += [("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
                   ("Morty, personal", lambda: role_menu("morty")), ("Neo, this machine", lambda: role_menu("neo")),

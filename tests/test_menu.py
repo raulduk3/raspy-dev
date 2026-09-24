@@ -278,6 +278,21 @@ class Menu(unittest.TestCase):
         self.assertNotIn('other', output)
         role.assert_called_once_with('iztac', self.project)
 
+    def test_a_menu_left_open_across_an_update_restarts_into_the_new_release(self):
+        self.menu.DRY = False
+        release = self.root / 'releases/new'
+        (release / 'bin').mkdir(parents=True)
+        (release / 'bin/ai').write_text('')
+        (self.root / 'current').symlink_to(release)
+        with mock.patch.object(self.menu, 'CURRENT', self.root / 'current'), \
+                mock.patch.object(self.menu.os, 'execv') as execv:
+            self.menu.upgrade_if_released()
+        execv.assert_called_once_with(self.menu.sys.executable, [self.menu.sys.executable, str(release.resolve() / 'bin/ai')])
+        with mock.patch.object(self.menu, 'CURRENT', self.root / 'current'), \
+                mock.patch.object(self.menu, 'ROOT', release.resolve()), mock.patch.object(self.menu.os, 'execv') as execv:
+            self.menu.upgrade_if_released()
+        execv.assert_not_called()
+
     def test_choosing_filters_and_refuses_numbers_that_are_not_shown(self):
         items = [('alpha', 'a'), ('beta', 'b'), ('alphabet', 'c')]
         picked = {}
