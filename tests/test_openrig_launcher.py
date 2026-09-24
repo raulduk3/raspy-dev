@@ -160,6 +160,21 @@ elif a[0] == 'up' and '--plan' in a and os.environ.get('PLAN_FAIL'): sys.exit(7)
                     ['start', 'iztac', '--cwd', str(folder), '--rig', 'Bad Name']):
             self.assertEqual(self.call(*bad).returncode, 2)
 
+    def test_an_engagement_with_its_own_spec_starts_that_team_where_its_members_say(self):
+        folder = self.root / 'engagement'
+        folder.mkdir()
+        spec = folder / 'rig.yaml'
+        spec.write_text('version: "0.2"\nname: iztac-research-agent\npods: []\n')
+        result = self.call('start', 'iztac', '--cwd', str(folder), '--rig', 'iztac-research-agent')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ups = [r['args'] for r in self.records() if r['args'][0] == 'up']
+        # No --cwd: it would override every member's own folder.
+        self.assertEqual(ups, [['up', str(spec.resolve()), '--plan'], ['up', str(spec.resolve())]])
+        spec.write_text('version: "0.2"\nname: another-team\npods: []\n')
+        result = self.call('start', 'iztac', '--cwd', str(folder), '--rig', 'iztac-research-agent')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('does not declare name: iztac-research-agent', result.stderr)
+
 
 class WorkerSeats(unittest.TestCase):
     """add-worker and remove-worker against a real Git worktree and the fake rig."""

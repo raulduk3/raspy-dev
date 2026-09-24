@@ -125,6 +125,21 @@ class Menu(unittest.TestCase):
         other = dict(self.project, repo='owner/other', root=str(self.root / 'other'))
         self.assertEqual(self.menu.team_for(other), 'iztac-other')
 
+    def test_a_team_defined_in_its_engagement_folder_is_started_from_that_folder(self):
+        folder = self.root / 'engagements/research-agent'
+        folder.mkdir(parents=True)
+        (folder / 'project').write_text('owner/repo\n')
+        (folder / 'rig.yaml').write_text('name: iztac-research-agent\n')
+        # The checkout was renamed; the team still starts from its own engagement folder.
+        renamed = dict(self.project, root=str(self.root / 'renamed-checkout'))
+        with mock.patch.object(self.menu, 'rigs', return_value=[]), \
+                mock.patch.object(self.menu, 'seats', return_value=[]):
+            output = self.drive(self.menu.project_team, 'y', '', project=renamed)
+        self.assertIn(f"opens the team defined in {folder / 'rig.yaml'}", output)
+        self.assertNotIn('Codex overseer', output)
+        self.assertTrue(self.runs(output)[0].endswith(
+            f'bin/dev-workspace start iztac --cwd {folder} --rig iztac-research-agent'))
+
     def test_team_seats_attach_relaunch_and_stop(self):
         seats = [{'rigId': 'R1', 'logicalId': 'control.lead', 'runtime': 'claude-code', 'sessionStatus': 'running',
                   'lifecycleState': 'attention_required',

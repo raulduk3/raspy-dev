@@ -501,9 +501,14 @@ def teams_menu():
 def project_team(project):
     team = team_for(project)
     if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
-        folder = ENGAGEMENTS / slug(name(project))
-        print(f"\n{name(project)} has no team yet. Starting one opens a control seat and a Codex overseer.\n"
-              f"They work from {folder}, outside the repository. Workers join later, one per loop worktree.")
+        # The team's own engagement folder, which a renamed checkout still finds through its record.
+        folder = ENGAGEMENTS / team.removeprefix("iztac-")
+        if (folder / "rig.yaml").is_file():
+            print(f"\n{name(project)}'s team is not running. Starting it opens the team defined in "
+                  f"{folder / 'rig.yaml'}.")
+        else:
+            print(f"\n{name(project)} has no team yet. Starting one opens a control seat and a Codex overseer.\n"
+                  f"They work from {folder}, outside the repository. Workers join later, one per loop worktree.")
         if not confirm("Start it?"):
             return
         folder.mkdir(parents=True, exist_ok=True)

@@ -381,6 +381,14 @@ def main():
             member = account_plan["member"]
             spec_path = write_generated_spec(name, member["runtime"], member["cwd"], member.get("config_home"))
             command = ["up", str(spec_path), "--cwd", str(args.cwd.resolve())]
+        elif args.rig and (args.cwd / "rig.yaml").is_file():
+            # The engagement defines its own team. Its members' folders resolve against the
+            # spec's own directory, and --cwd would override every one of them, so none is passed.
+            spec = (args.cwd / "rig.yaml").resolve()
+            declared = re.search(r"^name:\s*['\"]?([^'\"\s]+)", spec.read_text(), re.MULTILINE)
+            if not declared or declared.group(1) != name:
+                parser.exit(2, f"{spec} does not declare name: {name}; fix the spec or the --rig name.\n")
+            command = ["up", str(spec)]
         elif args.rig:
             # Same template under the project's own name. Written to the state directory,
             # so its local: agent refs become absolute, as render_openrig_spec explains.
