@@ -18,6 +18,16 @@ BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] && . "$BRIEF_CONF"
 BOT_REF="${DEV_PLATFORM_BOT_TOKEN_REF:-op://Employee/bot GitHub token/credential}"
 identity="$(awk -v r="$repo" '$1==r {print $3}' "$CONF" 2>/dev/null | head -1)"
+case "${1:-} ${2:-}" in
+  "pr merge"|"pr ready"|"pr review"|"release create"|"repo delete"|api\ *)
+    echo "ghx: requested operation is an owner's act; refused" >&2; exit 3 ;;
+esac
+# Reject alternate repository/host switches; identity was selected for this repo only.
+for arg in "$@"; do
+  case "$arg" in --repo|--repo=*|-R|-R?*|--hostname|--hostname=*)
+    echo "ghx: repository/host override refused" >&2; exit 3 ;;
+  esac
+done
 case "$identity" in
   owner)
     # The owner's login. Refuse the writes that are never delegated.
@@ -28,6 +38,15 @@ case "$identity" in
     exec gh "$@" --repo "$repo"
     ;;
   bot)
+    checkout="$(awk -v r="$repo" '$1==r {print $2; exit}' "$CONF")"
+    common="$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    personal=0
+    while IFS= read -r entry; do
+      case "$entry" in ''|'#'*) continue ;; esac
+      entry="${entry/#\~/$HOME}"
+      case "$(dirname "$common")/" in "$entry"/*) personal=1 ;; esac
+    done < "${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}"
+    [ "$personal" = 1 ] || { echo 'ghx: bot identity refused on a professional repository' >&2; exit 3; }
     if ! op read -n "$BOT_REF" >/dev/null 2>&1; then
       echo "ghx: no bot token at '$BOT_REF' (account not created yet); refusing to fall back to the owner's login on $repo" >&2
       exit 4
