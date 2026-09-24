@@ -108,6 +108,32 @@ class RoleLaunch(unittest.TestCase):
                                  account='openai-apple', profiles_root=self.profiles,
                                  agents_root=self.root / 'no-agents')
 
+    def test_journal_is_configured_for_the_personal_role_only(self):
+        self.configure_profile()
+        conf = self.root / 'journal.conf'
+        vault = self.root / 'vault'
+        vault.mkdir()
+        conf.write_text(f'# the journal folder\n{vault}\n')
+        self.assertEqual(role_launch.journal_root(conf), str(vault))
+        # A missing file, a commented-only file, and a path that is not a directory all decline.
+        self.assertIsNone(role_launch.journal_root(self.root / 'absent.conf'))
+        commented = self.root / 'empty.conf'
+        commented.write_text('# nothing here\n')
+        self.assertIsNone(role_launch.journal_root(commented))
+        gone = self.root / 'gone.conf'
+        gone.write_text(str(self.root / 'not-a-directory') + '\n')
+        self.assertIsNone(role_launch.journal_root(gone))
+        # The engineering conversation never carries a journal root, configured or not.
+        with mock.patch.object(role_launch, 'JOURNAL_CONF', conf):
+            engineering, _ = self.plan()
+            self.assertIsNone(engineering['journal'])
+            personal_id = conversations.create(self.store, 'morty', 'Personal fixture')['id']
+            personal, env = role_launch.plan(personal_id, state_root=self.state, registry=self.registry,
+                                             account='openai-apple', profiles_root=self.profiles,
+                                             agents_root=self.agents)
+            self.assertEqual(personal['journal'], str(vault))
+            self.assertEqual(json.loads(env['DEV_PLATFORM_ROLE_LAUNCH'])['journalRoot'], str(vault))
+
     def test_resume_only_from_this_conversation_and_clean_environment(self):
         self.configure_profile()
         with self.assertRaisesRegex(ValueError, 'no native Pi session'):

@@ -41,3 +41,24 @@ Appending the same titled section with the same body is a no-op. A different bod
 Writes are atomic and serialized among callers of this tool. A pre-replacement content check catches observed outside edits, but ordinary editors do not participate in the lock; this is not a general concurrent-edit synchronization protocol. Live migration must switch known writers together. The old helper and its live callers have not yet been replaced.
 
 Validation covers real CLI writes, retry behavior, conflicts, placement within an existing note, legacy/symlink refusal, two concurrent log writers, and a write/retry on an isolated copy of an actual journal note. No live journal text was changed during validation.
+
+## Morty's access to the journal
+
+The journal is plain Markdown in PARA folders. Obsidian is a viewer, not a
+dependency, and nothing here calls it or `obsidian-cli`. `bin/journal` is the
+only authority for where a daily file lives, which is what the OpenClaw
+`morty_log.py` used to be.
+
+`~/.config/dev-platform/journal.conf` holds one absolute path, the first
+non-comment line. When it resolves to a real directory, a Morty launch carries
+it and registers the `journal` tool. The other roles never receive it: Iztac's
+ledger is GitHub and Neo's records are its own. `ai-role plan` prints the root
+it would attach, so a launch never silently reaches a folder you did not expect.
+
+The tool exposes the command's own verbs. `tasks` reads and modifies nothing.
+`log-ensure` and `log-append` write Morty's dense internal daily log.
+`journal-ensure` and `journal-line` add at most a single summary line to Ricky's
+own journal. That separation is deliberate: the internal log is the agent's
+space, the journal is Ricky's, and tasks stay in his own notes rather than in
+any agent's files. There is no automation here and none is wanted: a person asks
+and the tool acts.

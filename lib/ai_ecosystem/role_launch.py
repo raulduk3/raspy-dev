@@ -17,6 +17,7 @@ from .store import Store
 PLATFORM = Path(__file__).resolve().parents[2]
 KEEP_ENV = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'COLORTERM', 'TERM_PROGRAM', 'SHELL', 'TMPDIR')
 MODEL_ID = r'[A-Za-z0-9][A-Za-z0-9._:-]{0,63}'
+JOURNAL_CONF = Path.home() / '.config/dev-platform/journal.conf'
 
 
 def provider_for(account):
@@ -30,6 +31,19 @@ def identity_file(agent, agents_root):
         if candidate.is_file():
             return candidate.resolve()
     raise ValueError(f'no identity file for {agent}; author agents/{agent}/identity.md')
+
+
+def journal_root(conf=None):
+    """The journal folder, one absolute path per the config file's first real line."""
+    path = Path(conf or JOURNAL_CONF).expanduser()
+    if not path.is_file():
+        return None
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#'):
+            root = Path(line).expanduser()
+            return str(root) if root.is_dir() else None
+    return None
 
 
 def select_account(data, requested):
@@ -103,6 +117,8 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
     # is exactly the complaint this exists to answer.
     memory_status = agent_memory.status(conversation['agent'], state)
     memory_index = state / conversation['agent'] / 'memory' / 'MEMORY.md'
+    # Personal scope reaches the journal; the other roles keep their own ledgers.
+    journal = journal_root() if conversation['agent'] == 'morty' else None
     archive = None
     if history_archive:
         archive = Path(history_archive).expanduser()
@@ -123,6 +139,7 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
               'agentDir': profile['profile_home'], 'identityFile': str(identity),
               'historyArchive': str(archive) if archive else None,
               'memoryState': str(state),
+              'journalRoot': journal,
               'accountRef': name + ':pi', 'provider': provider, 'modelId': model_id,
               'resumeFile': str(resume_file(home, resume)) if resume else None, 'offline': bool(offline)}
     env = {key: environ[key] for key in KEEP_ENV if key in environ}
@@ -143,7 +160,7 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
                    'note': 'The index rides in context; the rest is behind the agent_memory tool'}
     result = {'version': 1, 'conversation_id': conversation_id, 'agent': conversation['agent'],
               'scope': conversation['scope'], 'cwd': cwd, 'account': attribution,
-              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'], 'memory': memory_view,
+              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'], 'memory': memory_view, 'journal': journal,
               'argv': [str(Path(node).resolve()), str(entry)], 'environment_keys': sorted(env),
               'launch': launch, 'header': header,
               'scope_note': 'New or explicitly resumed execution; the launcher records no account equivalence and replays nothing'}

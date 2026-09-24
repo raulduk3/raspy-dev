@@ -4,8 +4,9 @@ import path from 'node:path';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { historyExtension } from './history-tool.mjs';
 import { memoryExtension } from './memory-tool.mjs';
+import { journalExtension } from './journal-tool.mjs';
 
-export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive, memoryState, extensionFactories = [] }) {
+export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive, memoryState, journalRoot, extensionFactories = [] }) {
   const { agent, scope, binding } = conversation;
   if (!['morty','iztac','neo'].includes(agent)) throw new Error('Unknown agent role');
   const project = ['project','formation'].includes(scope?.kind);
@@ -16,6 +17,9 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     throw new Error('Role resource paths must be absolute');
   }
   if (memoryState !== undefined && !path.isAbsolute(memoryState)) throw new Error('Memory state root must be absolute');
+  if (journalRoot !== undefined && !path.isAbsolute(journalRoot)) throw new Error('Journal root must be absolute');
+  // The journal is Ricky's own record; only the personal role reaches it.
+  const journal = agent === 'morty' ? journalRoot : undefined;
   // Personal/system sessions execute in their neutral conversation workspace.
   // Invocation cwd never participates in resource selection.
   let cwd;
@@ -47,7 +51,8 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     noExtensions:true, noSkills:true, noPromptTemplates:true, noThemes:true,
     additionalExtensionPaths:[path.join(platformRoot,'integrations/pi/perplexity.ts')],
     extensionFactories:[...(historyArchive ? [historyExtension({archive:historyArchive,agent})] : []),
-      ...(memoryState ? [memoryExtension({agent, state:memoryState})] : []), ...extensionFactories],
+      ...(memoryState ? [memoryExtension({agent, state:memoryState})] : []),
+      ...(journal ? [journalExtension({root:journal})] : []), ...extensionFactories],
     noContextFiles:!project,
     additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
     agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(memory?[memory]:[]),...(project?base.agentsFiles:[])]}),
