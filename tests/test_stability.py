@@ -178,6 +178,17 @@ class CheckTests(Fixture):
         self.check('--status', cwd=linked, expected=1)
         self.check(cwd=linked, expected=1)
 
+    def test_dirty_submodule_fails_closed(self):
+        sub = self.base / 'sub-source'
+        self.run_cmd('git', 'clone', '-q', '--local', self.repo, sub)
+        self.run_cmd('git', '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(sub), 'module')
+        self.commit()
+        self.check()
+        (self.repo / 'module/source').write_text('dirty module')
+        result = self.check('--status', expected=1)
+        self.assertIn('dirty submodule cannot be cached', result.stdout)
+        self.check(expected=1)
+
     def test_pinned_bun_selected_after_env(self):
         (self.repo / 'bin/check').unlink()
         (self.repo / 'package.json').write_text('{"scripts":{"check":"fixture"}}')

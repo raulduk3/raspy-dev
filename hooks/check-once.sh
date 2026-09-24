@@ -48,7 +48,10 @@ for path in sorted(paths):
         elif stat.S_ISDIR(st.st_mode):
             # Submodule checkout state cannot be reduced to its index gitlink alone.
             add(subprocess.check_output(['git', '-C', os.fsdecode(path), 'rev-parse', 'HEAD']))
-            add(subprocess.check_output(['git', '-C', os.fsdecode(path), 'status', '--porcelain', '-z']))
+            status = subprocess.check_output(['git', '-C', os.fsdecode(path), 'status', '--porcelain', '-z'])
+            if status:
+                raise SystemExit('check-once: dirty submodule cannot be cached; commit or clean its changes first')
+            add(status)
         else: raise RuntimeError('unsupported file type')
     except FileNotFoundError: add(b'missing')
 env = pathlib.Path(sys.argv[1]); add(str(env).encode()); add(env.read_bytes() if env.exists() else b'')
