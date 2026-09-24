@@ -37,7 +37,8 @@ try {
   await runRoleTerminal({
     conversation: launch.conversation, conversationHome: launch.conversationHome,
     platformRoot: launch.platformRoot, agentDir: launch.agentDir, identityFile: launch.identityFile,
-    historyArchive: launch.historyArchive || undefined, modelRuntime, model,
+    historyArchive: launch.historyArchive || undefined, memoryState: launch.memoryState || undefined,
+    modelRuntime, model,
     accountRef: launch.accountRef, resumeFile: launch.resumeFile || undefined,
   });
 } catch (error) {

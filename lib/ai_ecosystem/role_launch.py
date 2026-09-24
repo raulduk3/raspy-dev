@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from . import accounts, conversations, environment_service, pi_launch
+from . import accounts, conversations, environment_service, memory as agent_memory, pi_launch
 from .store import Store
 
 PLATFORM = Path(__file__).resolve().parents[2]
@@ -97,7 +97,12 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
     if observation.get('provider') != provider:
         raise ValueError('Pi profile provider does not match the account')
     model_id = default_model(profile['profile_home'], provider, model)
-    identity = identity_file(conversation['agent'], agents_root or Path.home() / '.local/share/dev-platform/agents')
+    state = Path(agents_root or Path.home() / '.local/share/dev-platform/agents').expanduser().resolve()
+    identity = identity_file(conversation['agent'], state)
+    # Memory is derived from the role, never a flag: a role launched without it
+    # is exactly the complaint this exists to answer.
+    memory_status = agent_memory.status(conversation['agent'], state)
+    memory_index = state / conversation['agent'] / 'memory' / 'MEMORY.md'
     archive = None
     if history_archive:
         archive = Path(history_archive).expanduser()
@@ -117,6 +122,7 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
               'conversationHome': str(home), 'platformRoot': str(PLATFORM),
               'agentDir': profile['profile_home'], 'identityFile': str(identity),
               'historyArchive': str(archive) if archive else None,
+              'memoryState': str(state),
               'accountRef': name + ':pi', 'provider': provider, 'modelId': model_id,
               'resumeFile': str(resume_file(home, resume)) if resume else None, 'offline': bool(offline)}
     env = {key: environ[key] for key in KEEP_ENV if key in environ}
@@ -128,10 +134,16 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
                    'identity': 'unverified',
                    'reason': "Pi sign-in is separate from this account's Codex/Claude binding; equivalence is not established"}
     header = (f"{conversation['agent']} | {conversation['scope']['kind']} | cwd {cwd} | pi {provider}/{model_id} | "
-              f"account {name} (identity unverified) | rig unbound")
+              f"account {name} (identity unverified) | memory {memory_status['total_entries']} entries | rig unbound")
+    memory_view = {'state_root': str(state), 'entries': memory_status['total_entries'],
+                   'roots': [{'label': r['label'], 'entries': r['entries'], 'writable': r['writable']}
+                             for r in memory_status['roots']],
+                   'index_in_context': memory_index.is_file(),
+                   'index_bytes': memory_index.stat().st_size if memory_index.is_file() else 0,
+                   'note': 'The index rides in context; the rest is behind the agent_memory tool'}
     result = {'version': 1, 'conversation_id': conversation_id, 'agent': conversation['agent'],
               'scope': conversation['scope'], 'cwd': cwd, 'account': attribution,
-              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'],
+              'model': provider + '/' + model_id, 'resume_file': launch['resumeFile'], 'memory': memory_view,
               'argv': [str(Path(node).resolve()), str(entry)], 'environment_keys': sorted(env),
               'launch': launch, 'header': header,
               'scope_note': 'New or explicitly resumed execution; the launcher records no account equivalence and replays nothing'}
