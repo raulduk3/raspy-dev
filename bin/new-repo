@@ -11,7 +11,8 @@
 # machine. Exit 0 on success.
 set -euo pipefail
 
-PLATFORM="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve the link in ~/.local/bin so templates are found in the release, not beside the link.
+PLATFORM="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 TEMPLATES="$PLATFORM/templates"
 RULESETS="$PLATFORM/github/rulesets"
 
