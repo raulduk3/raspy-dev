@@ -2,19 +2,25 @@
 
 `bin/ai-session` keeps a local, reconstructible index of Claude Code, Codex, OpenClaw and
 VS Code chat sessions. `bin/ai-env doctor` reports on the local toolchain. Both are local only:
-no daemon, scheduler, database service, network call or model call, and neither writes native
-client storage.
+no daemon, scheduler or database service, and neither writes native client storage.
+The opt-in Laya probe makes one local inference call through the installed helper, which
+may append its own metadata-only audit record; the default doctor makes no model call.
 
 ## ai-session
 
 ```
 ai-session [--state-root DIR] scan [--limit N] [--home DIR] [--no-openclaw]
-ai-session list [--json] [--runtime claude|codex|openclaw|copilot]
+ai-session list [--json] [--runtime claude|codex|openclaw|copilot] [--limit N] [--search TEXT]
 ai-session show ID
 ai-session title ID TEXT [--expect-revision N]
 ai-session handoff ID [--import FILE|- --expect-revision N]
 ai-session resume ID [--execute]
 ```
+
+`list` returns at most 20 matches by default. `--search` matches a case-insensitive
+substring in title, native ID or working directory, never transcript content. `--limit 0`
+explicitly requests all matches; JSON includes `total` and `has_more`. Text rows truncate
+long titles and paths for readability; `show` retains the full metadata.
 
 State lives under `~/.local/state/dev-platform/sessions` (or `--state-root`, or
 `AI_SESSION_STATE`), owner-only:
@@ -23,8 +29,8 @@ State lives under `~/.local/state/dev-platform/sessions` (or `--state-root`, or
   in `locks/`. Every write bumps `revision`.
 - `handoffs/<id>.md`: a handoff you wrote, imported from a file or stdin (64 KiB limit).
   Import requires `--expect-revision`; a stale revision exits 3.
-- `events/<id>/*.json`: immutable, uniquely named event files.
-- `sources.json`: last scan result per native source (`ok`, `truncated`, `error`).
+- `events/<id>/*.json`: immutable, uniquely named event files, published by fsync + atomic rename.
+- `sources.json`: last scan result per native source (`ok`, `truncated`, `error`, `unavailable`).
 
 Files starting with `.` are partial writes and are ignored. Deleting `manifests/` and
 rescanning rebuilds the index; titles set with `title` and handoffs live only here, so keep
@@ -38,7 +44,7 @@ native ID in two Codex homes or two OpenClaw agents never collides.
 | Runtime | Source | Fields kept |
 |---|---|---|
 | Codex | `state_*.sqlite` `threads`, read-only, schema checked; `session_index.jsonl` fallback | id, rollout_path, cwd, title/name, git_branch, archived, updated_at |
-| Claude Code | `projects/*/sessions-index.json`; else the first 40 lines / 256 KiB of each transcript | sessionId, cwd/projectPath, gitBranch, timestamp/modified, customTitle |
+| Claude Code | `projects/*/sessions-index.json`; else the first 40 lines / 256 KiB of each transcript | sessionId, cwd/projectPath, gitBranch, timestamp/modified, customTitle, transcript/index paths, transcript_missing |
 | OpenClaw | `openclaw sessions --all-agents --limit all --json` | agentId, key, sessionId, store path |
 | VS Code | `workspaceStorage/*/workspace.json`, `chatSessions/*.json` | folder, sessionId, customTitle, dates |
 
@@ -50,10 +56,12 @@ object are indexed with status `unsupported`.
 ### Status
 
 Status is `unknown` unless native evidence says otherwise: `stale` when a complete scan of
-its source no longer finds the record, `unsupported` for unrecognized formats. File
+its source no longer finds the record or a Claude index references a missing transcript, `unsupported` for unrecognized formats. File
 modification time is never taken as proof a session is running. A source that errors or
 is truncated (by `--limit`, default 500 per source, or OpenClaw `hasMore`/`errors`) leaves
-existing entries as they were and is reported in the scan output.
+absent entries unchanged and is reported in the scan output (successfully read records may
+update during a truncated scan). A vanished previously discovered source is `unavailable`,
+not evidence its records were deleted; existing manifests and handoffs remain untouched.
 
 ### Resume
 
@@ -72,17 +80,25 @@ argv and no shell. There is no pause, steer or cancel.
 ## ai-env doctor
 
 ```
-ai-env doctor [--json] [--probe-laya] [--home DIR]
+ai-env doctor [--json] [--probe-laya] [--home DIR] [--platform-root DIR]
 ```
 
 Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `broken`:
 
-- whether `claude`, `codex`, `openclaw`, `code`, `gh`, `git`, `jq`, `python3`, `laya` are on PATH;
+- whether `claude`, `codex`, `openclaw`, `code`, `gh`, `git`, `jq`, `python3`, `laya-decide` are on PATH;
 - broken symlinks in `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and links whose
-  name matches a platform skill but point somewhere else (divergent);
+  name matches a platform skill but point somewhere else (divergent). Canonical source is
+  `~/Dev/dev-platform`, not the doctor executable’s checkout; override with `--platform-root`;
 - whether `bin/check` exists;
-- Laya: `*laya*.plist` launch configurations by name, and a single loopback listener (via
-  `lsof`; `unverified` without it). `--probe-laya` runs `laya --help` with a 10 second bound;
-  without it the probe is `unverified`.
+- Laya: parses `com.raulduk3.laya.plist` with `plistlib`, validating the laya-serve
+  entrypoint, loopback host, port 18791, preload enabled, and one matching launch config.
+  Checks TCP port 18791 with bounded `lsof`, counting distinct listener PIDs regardless of
+  process name (the actual service can be Python). Missing `lsof` is `unverified`.
+- `--probe-laya` invokes `laya-decide` with a fixed innocuous two-option JSON input and a
+  20-second timeout. Only a valid shadow recommendation, with no automatic application
+  and routing metadata, verifies inference. A helper-reported unavailable result is
+  `unavailable`, not healthy. Recommendation quality always remains `unverified`; no
+  default inference runs. Raw state, helper output, launch arguments and environment
+  values are never printed.
 
 It never installs, restarts, edits configuration or prints credentials or config contents.

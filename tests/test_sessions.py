@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import select
 import subprocess
 import sys
 import tempfile
@@ -34,7 +35,7 @@ class SessionIndex(unittest.TestCase):
         self.state = self.base / 'state'
         self.work = self.base / 'work'
         self.work.mkdir()
-        self.env = {'PATH': '/usr/bin:/bin', 'HOME': str(self.home)}
+        self.env = {'PATH': '/usr/bin:/bin', 'HOME': str(self.home), 'PYTHONDONTWRITEBYTECODE': '1'}
         self.codex_db(self.home / '.codex', [(UUID, str(self.work), 'fix login', 'main')])
         self.codex_db(self.home / '.openclaw/agents/main/agent/codex-home', [(UUID, str(self.work), 'owned', 'main')])
         project = self.home / '.claude/projects/-work'
@@ -60,7 +61,7 @@ class SessionIndex(unittest.TestCase):
         (project / f'{sid}.jsonl').write_text('\n'.join(json.dumps(x) for x in lines) + '\n')
 
     def run_cli(self, *args, stdin=None, check=True):
-        run = subprocess.run([sys.executable, str(CLI), '--state-root', str(self.state), *args],
+        run = subprocess.run([str(CLI), '--state-root', str(self.state), *args],
                              capture_output=True, text=True, env=self.env, input=stdin)
         if check and run.returncode:
             self.fail(f'{args}: {run.returncode} {run.stderr}')
@@ -84,6 +85,10 @@ class SessionIndex(unittest.TestCase):
         dump = ''.join(p.read_text() for p in self.state.rglob('*.json'))
         self.assertNotIn('SECRET BODY', dump)
         self.assertNotIn('PRIVATE', dump)
+        rec = sessions.adapters._rec('nested', title={'body': 'SECRET BODY'},
+                                     extra={'key': {'message': 'SECRET BODY'}})
+        self.assertIsNone(rec['title'])
+        self.assertIsNone(rec['native']['key'])
 
     def test_titles_and_handoffs_survive_rescan_and_revision_conflict_fails(self):
         self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
@@ -148,6 +153,132 @@ class SessionIndex(unittest.TestCase):
         sessions.scan(s, [good([rec(1)])], 10)
         stat = {m['native_id']: m['status'] for m in s.all()}
         self.assertEqual(stat, {'id1': 'unknown', 'id2': 'stale', 'id9': 'unknown'})
+
+    def test_interrupted_event_publication_leaves_no_partial_final_event(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        s = store.Store(self.state)
+        before = s.events(sid)
+        code = ("import sys, os, signal; sys.path.insert(0, sys.argv[1]); "
+                "from ai_ecosystem.store import Store\n"
+                "def pause_before_rename(src, dst):\n"
+                "    print('ready', flush=True)\n    signal.pause()\n"
+                "os.replace = pause_before_rename\n"
+                "Store(sys.argv[2]).event(sys.argv[3], 'interrupted')\n")
+        proc = subprocess.Popen([sys.executable, '-c', code, str(PLATFORM / 'lib'), str(self.state), sid],
+                                stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([proc.stdout], [], [], 5)[0], 'writer must reach atomic publication')
+            self.assertEqual(proc.stdout.readline().strip(), 'ready')
+            self.assertEqual(s.events(sid), before)
+        finally:
+            proc.kill()
+            proc.communicate(timeout=5)
+        self.assertTrue(list((self.state / 'events' / sid).glob('.*.tmp')))
+        self.assertEqual(s.events(sid), before)
+        s.event(sid, 'after')
+        self.assertEqual(len(s.events(sid)), len(before) + 1)
+        self.run_cli('show', sid)
+
+    def test_stale_scan_preserves_edits_made_after_manifest_snapshot(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        original = store.Store(self.state).get(sid)
+        owner = self
+
+        class InterleavedStore(store.Store):
+            def all(self):
+                snapshot = super().all()
+                rev = self.get(sid)['revision']
+                owner.run_cli('title', sid, 'concurrent title', '--expect-revision', str(rev))
+                owner.run_cli('handoff', sid, '--import', '-', '--expect-revision', str(rev + 1),
+                              stdin='concurrent handoff')
+                return snapshot
+
+        s = InterleavedStore(self.state)
+        src = sessions.adapters.Source(original['source'], 'claude', original['store'], 'user', lambda: [])
+        sessions.scan(s, [src], 100)
+        after = s.get(sid)
+        self.assertEqual(after['title_override'], 'concurrent title')
+        self.assertTrue(after['has_handoff'])
+        self.assertEqual(s.read_handoff(sid), 'concurrent handoff')
+        self.assertEqual(after['status'], 'stale')
+        self.assertEqual([e['kind'] for e in s.events(sid)], ['scan', 'title', 'handoff', 'missing'])
+
+    def test_claude_index_and_headers_keep_locators_and_missing_transcript_is_explicit(self):
+        project = self.home / '.claude/projects/-work'
+        existing = next(project.glob('*.jsonl'))
+        missing = project / 'missing.jsonl'
+        (project / 'sessions-index.json').write_text(json.dumps({'entries': [
+            {'sessionId': 'missing', 'fullPath': str(missing), 'projectPath': str(self.work),
+             'firstPrompt': 'SECRET FIRST PROMPT'}]}))
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        by_id = {m['native_id']: m for m in self.by('claude')}
+        self.assertEqual(by_id[existing.stem]['native']['transcript_path'], str(existing))
+        m = by_id['missing']
+        self.assertEqual(m['native']['transcript_path'], str(missing))
+        self.assertEqual(m['native']['index_path'], str(project / 'sessions-index.json'))
+        self.assertTrue(m['native']['transcript_missing'])
+        self.assertEqual(m['status'], 'stale')
+        self.assertFalse(sessions.resume_plan(m)['supported'])
+        self.assertNotIn('SECRET FIRST PROMPT', ''.join(p.read_text() for p in self.state.rglob('*.json')))
+
+    def test_disappeared_source_is_unavailable_without_staling_records(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        before = self.by('claude')
+        (self.home / '.claude').rename(self.home / 'moved-claude')
+        report = json.loads(self.run_cli('scan', '--home', str(self.home), '--no-openclaw').stdout)
+        self.assertEqual(report['claude:default']['state'], 'unavailable')
+        self.assertEqual(self.by('claude'), before)
+
+    def test_openclaw_cli_contract_distinguishes_agents_and_truncation(self):
+        bin_dir = self.base / 'bin'
+        bin_dir.mkdir()
+        fixture = self.base / 'openclaw.json'
+        data = {'path': None, 'allAgents': True, 'count': 2, 'totalCount': 2,
+                'limitApplied': None, 'hasMore': False, 'activeMinutes': None,
+                'stores': [{'agentId': a, 'path': f'/native/{a}/sessions.sqlite'} for a in ('a', 'b')],
+                'sessions': [{'sessionId': UUID, 'agentId': a, 'key': f'agent:{a}:main',
+                              'updatedAt': 100, 'message': 'SECRET OPENCLAW BODY'} for a in ('a', 'b')]}
+        fixture.write_text(json.dumps(data))
+        binary = bin_dir / 'openclaw'
+        binary.write_text(f'#!{sys.executable}\nimport sys\nfrom pathlib import Path\n'
+                          "assert sys.argv[1:] == ['sessions', '--all-agents', '--limit', 'all', '--json']\n"
+                          f'print(Path({str(fixture)!r}).read_text())\n')
+        binary.chmod(0o755)
+        self.env['PATH'] = str(bin_dir) + ':/usr/bin:/bin'
+        self.run_cli('scan', '--home', str(self.home))
+        records = self.by('openclaw')
+        self.assertEqual(len(records), 2)
+        self.assertEqual(len({m['id'] for m in records}), 2)
+        self.assertEqual(len({m['store'] for m in records}), 2)
+        for m in records:
+            self.assertEqual(self.run_cli('resume', m['id'], check=False).returncode, 2)
+        data['sessions'] = data['sessions'][:1]
+        data['hasMore'] = True
+        fixture.write_text(json.dumps(data))
+        report = json.loads(self.run_cli('scan', '--home', str(self.home)).stdout)
+        self.assertEqual(report['openclaw:all-agents']['state'], 'truncated')
+        self.assertEqual({m['status'] for m in self.by('openclaw')}, {'unknown'})
+        self.assertNotIn('SECRET OPENCLAW BODY', ''.join(p.read_text() for p in self.state.rglob('*.json')))
+
+    def test_list_is_bounded_and_searches_only_metadata(self):
+        self.codex_db(self.home / '.codex', [(f'extra-{i}', str(self.work), f'Example {i}', 'main') for i in range(30)])
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        listed = json.loads(self.run_cli('list', '--json').stdout)
+        self.assertEqual(len(listed['sessions']), 20)
+        self.assertEqual(listed['total'], 35)
+        self.assertTrue(listed['has_more'])
+        all_rows = json.loads(self.run_cli('list', '--json', '--limit', '0').stdout)
+        self.assertEqual(len(all_rows['sessions']), 35)
+        self.assertFalse(all_rows['has_more'])
+        found = json.loads(self.run_cli('list', '--json', '--search', 'EXAMPLE 2', '--limit', '3').stdout)
+        self.assertEqual(found['total'], 11)
+        self.assertEqual(len(found['sessions']), 3)
+        self.assertTrue(found['has_more'])
+        absent = json.loads(self.run_cli('list', '--json', '--search', 'SECRET BODY').stdout)
+        self.assertEqual(absent['total'], 0)
+        self.assertNotEqual(self.run_cli('list', '--limit', '-1', check=False).returncode, 0)
 
     def test_resume_prints_quoted_command_and_never_fakes_unsupported(self):
         self.run_cli('scan', '--home', str(self.home), '--no-openclaw')

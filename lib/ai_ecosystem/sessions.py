@@ -23,6 +23,7 @@ def scan(store, sources, limit):
     report = {}
     for src in sources:
         records, truncated = [], False
+        source_info = {'runtime': src.runtime, 'store': src.store, 'owner': src.owner}
         try:
             for rec in src.read():
                 if rec.get('truncated'):
@@ -33,20 +34,23 @@ def scan(store, sources, limit):
                 else:
                     records.append(rec)
         except Exception as exc:  # one broken source must not touch any other source
-            status[src.key] = {'state': 'error', 'error': f'{type(exc).__name__}: {exc}'[:300], 'at': time.time()}
+            status[src.key] = dict(source_info, state='unavailable' if isinstance(exc, FileNotFoundError) else 'error',
+                                   error=type(exc).__name__, at=time.time())
             report[src.key] = status[src.key]
             continue
         seen = set()
         for rec in records:
-            sid = session_id(src.runtime, src.store, rec['native_id'])
+            native_store = rec.get('identity_store', src.store)
+            sid = session_id(src.runtime, native_store, rec['native_id'])
             seen.add(sid)
             with store.lock(sid):
                 old = store.get(sid) or {}
                 new = {k: old[k] for k in KEPT if k in old}
                 new.update({k: rec.get(k) for k in MERGED})
-                new.update(id=sid, runtime=src.runtime, store=src.store, source=src.key, owner=src.owner,
-                           native_id=rec['native_id'], missing=False,
-                           status='unsupported' if rec['format'] != 'supported' else 'unknown')
+                new.update(id=sid, runtime=src.runtime, store=native_store, source=src.key, owner=src.owner,
+                           native_id=rec['native_id'], missing=bool(rec.get('native', {}).get('transcript_missing')),
+                           status=('stale' if rec.get('native', {}).get('transcript_missing') else
+                                   'unsupported' if rec['format'] != 'supported' else 'unknown'))
                 if {k: old.get(k) for k in new} != new:
                     store.put(new)
                     store.event(sid, 'scan', source=src.key)
@@ -55,10 +59,13 @@ def scan(store, sources, limit):
             for item in store.all():
                 if item.get('source') == src.key and item['id'] not in seen and not item.get('missing'):
                     with store.lock(item['id']):
-                        store.put(dict(item, missing=True, status='stale'))
-                        store.event(item['id'], 'missing', source=src.key)
-                    stale += 1
-        status[src.key] = {'state': 'truncated' if truncated else 'ok', 'count': len(records), 'stale': stale, 'at': time.time()}
+                        current = store.get(item['id'])
+                        if current and current.get('source') == src.key and not current.get('missing'):
+                            store.put(dict(current, missing=True, status='stale'))
+                            store.event(item['id'], 'missing', source=src.key)
+                            stale += 1
+        status[src.key] = dict(source_info, state='truncated' if truncated else 'ok',
+                               count=len(records), stale=stale, at=time.time())
         report[src.key] = status[src.key]
     store.save_sources(status)
     return report
@@ -104,23 +111,36 @@ def main(argv=None):
     s = sub.add_parser('scan'); s.add_argument('--limit', type=int, default=500); s.add_argument('--home')
     s.add_argument('--no-openclaw', action='store_true')
     s = sub.add_parser('list'); s.add_argument('--json', action='store_true'); s.add_argument('--runtime')
+    s.add_argument('--limit', type=int, default=20, help='maximum results (default 20; 0 means all)')
+    s.add_argument('--search', help='case-insensitive title, native ID or cwd substring')
     s = sub.add_parser('show'); s.add_argument('id')
     s = sub.add_parser('title'); s.add_argument('id'); s.add_argument('title'); s.add_argument('--expect-revision', type=int)
     s = sub.add_parser('handoff'); s.add_argument('id'); s.add_argument('--import', dest='source', metavar='FILE|-')
     s.add_argument('--expect-revision', type=int)
     s = sub.add_parser('resume'); s.add_argument('id'); s.add_argument('--execute', action='store_true')
     a = p.parse_args(argv)
+    if a.cmd in ('list', 'scan') and a.limit < (1 if a.cmd == 'scan' else 0):
+        p.error('--limit must be positive for scan, or nonnegative for list')
     store = Store(a.state_root)
     try:
         if a.cmd == 'scan':
-            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw), a.limit), indent=2, sort_keys=True))
+            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources()), a.limit), indent=2, sort_keys=True))
         elif a.cmd == 'list':
             items = [m for m in store.all() if not a.runtime or m['runtime'] == a.runtime]
+            if a.search:
+                needle = a.search.casefold()
+                items = [m for m in items if any(needle in str(m.get(k) or '').casefold()
+                         for k in ('title_override', 'title', 'native_id', 'cwd'))]
             items.sort(key=lambda m: str(m.get('updated_at') or ''), reverse=True)
+            total = len(items)
+            if a.limit:
+                items = items[:a.limit]
             if a.json:
-                print(json.dumps({'sessions': items, 'sources': store.sources()}, indent=2, sort_keys=True))
+                print(json.dumps({'sessions': items, 'total': total, 'has_more': total > len(items), 'sources': store.sources()}, indent=2, sort_keys=True))
             for m in [] if a.json else items:
-                print(f"{m['id']}\t{m['status']}\t{m.get('title_override') or m.get('title') or '-'}\t{m.get('cwd') or '-'}")
+                print(f"{m['id']}\t{m['status']}\t{str(m.get('title_override') or m.get('title') or '-')[:80]}\t{str(m.get('cwd') or '-')[:100]}")
+            if not a.json and total > len(items):
+                print(f'{len(items)} of {total} matches; use --search or --limit to narrow or expand.')
         elif a.cmd == 'show':
             m = load(store, a.id)
             print(json.dumps(dict(m, handoff=store.read_handoff(a.id), events=len(store.events(a.id))), indent=2, sort_keys=True))
