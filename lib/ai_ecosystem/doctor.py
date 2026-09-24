@@ -25,14 +25,18 @@ def check_commands():
     return {c: {'state': 'ok' if shutil.which(c) else 'missing'} for c in COMMANDS}
 
 
-def stale_release(skill, platform):
-    """True when a skill resolves into a release other than the platform's own."""
-    release = skill.resolve().parent.parent
-    return release.parent.name == 'releases' and release != platform
+def stale_release(skill, platform, checkout=None):
+    """True when a skill resolves into a release other than the platform's own, or into the
+    development checkout while a release is active: either one stops following activation."""
+    source = skill.resolve().parent.parent
+    if source == platform:
+        return False
+    return source.parent.name == 'releases' or (checkout is not None and source == checkout)
 
 
 def check_skills(home, platform):
     platform_skills = (platform / 'skills').resolve()
+    checkout = (home / 'Dev/dev-platform').resolve()
     expected = {p.parent.name for p in platform_skills.glob('*/SKILL.md') if p.is_file()}
     # The repository declares required names; shared discovery declares the active
     # source. Workshop-published overrides need not live in the repository.
@@ -61,7 +65,7 @@ def check_skills(home, platform):
         # A link into another release keeps an agent on skills the activated release replaced.
         # A Workshop override lives outside releases/ and stays healthy.
         stale = sorted(name for name in expected if (folder / name / 'SKILL.md').is_file()
-                       and stale_release(folder / name, platform_skills.parent))
+                       and stale_release(folder / name, platform_skills.parent, checkout))
         out[rel] = {'state': 'broken' if broken or divergent else
                            'missing' if missing or canonical_missing else 'stale' if stale else 'ok',
                     'broken': broken, 'divergent': divergent, 'missing': missing, 'stale': stale,

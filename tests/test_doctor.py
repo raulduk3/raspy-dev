@@ -124,6 +124,11 @@ class Doctor(unittest.TestCase):
         for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
             self.assertEqual(report[rel]['state'], 'stale')
             self.assertEqual(report[rel]['stale'], ['loop'])
+        checkout = self.platform / 'skills/loop'  # the development checkout, not a release
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel / 'loop').unlink()
+            os.symlink(checkout, self.home / rel / 'loop')
+        self.assertEqual(self.run_doctor()['skills']['.agents/skills']['stale'], ['loop'])
         for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
             (self.home / rel / 'loop').unlink()
             os.symlink(current / 'skills/loop', self.home / rel / 'loop')
