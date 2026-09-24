@@ -6,6 +6,8 @@ import io
 import json
 import os
 from pathlib import Path
+import pty
+import tty
 import tempfile
 import unittest
 from unittest import mock
@@ -118,7 +120,8 @@ class Menu(unittest.TestCase):
                   'canonicalSessionName': 'control-lead@t'},
                  {'rigId': 'R1', 'logicalId': 'review.overseer', 'runtime': 'codex', 'sessionStatus': 'exited',
                   'lifecycleState': 'attention_required', 'agentActivity': {}, 'canonicalSessionName': 'review-overseer@t'}]
-        with mock.patch.object(self.menu, 'seats', return_value=seats), mock.patch.dict(os.environ, {}, clear=False):
+        with mock.patch.object(self.menu, 'seats', return_value=seats), mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(self.menu.shutil, 'which', return_value=None):
             os.environ.pop('TMUX', None)
             output = self.drive(self.menu.team_menu, '2', '3', 'y', '4', 'y', team='t')
         self.assertIn('control.lead · claude-code · waiting on you\n', output)
@@ -130,16 +133,38 @@ class Menu(unittest.TestCase):
         self.assertTrue(runs[1].endswith('bin/rig launch R1 review.overseer'))
         self.assertTrue(runs[2].endswith('bin/rig down R1'))
 
-    def test_herdr_view_replaces_only_this_teams_views(self):
-        listing = {'result': {'workspaces': [
-            {'workspace_id': 'w1', 'label': 'openrig:rig:t#l1'}, {'workspace_id': 'w2', 'label': 'openrig:pod:t/intake#l2'},
-            {'workspace_id': 'w3', 'label': 'openrig:rig:t-two#l3'}, {'workspace_id': 'w4', 'label': '~'}]}}
-        with mock.patch.object(self.menu, 'read_json', return_value=listing), \
-                mock.patch.object(self.menu.shutil, 'which', return_value='/bin/herdr'), \
-                mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w2'}):
-            runs = self.runs(self.drive(self.menu.herdr_view, team='t'))
-        self.assertEqual(runs[:1], ['herdr workspace close w1'])  # w2 holds this menu
+    def herdr(self, workspaces, panes):
+        def fake(argv):
+            if argv[:3] == ['herdr', 'workspace', 'list']:
+                return {'result': {'workspaces': workspaces}}
+            if argv[:3] == ['herdr', 'pane', 'list']:
+                return {'result': {'panes': panes}}
+            return None
+        return mock.patch.object(self.menu, 'read_json', side_effect=fake)
+
+    SEATS = [{'logicalId': 'control.lead', 'sessionStatus': 'running', 'agentActivity': {}},
+             {'logicalId': 'review.overseer', 'sessionStatus': 'running', 'agentActivity': {}}]
+
+    def test_a_team_reuses_its_one_named_space_and_zooms_the_picked_agent(self):
+        workspaces = [{'workspace_id': 'w1', 'label': 't'}, {'workspace_id': 'w2', 'label': 'openrig:pod:t/control#l2'},
+                      {'workspace_id': 'w3', 'label': 'openrig:rig:t-two#l3'}, {'workspace_id': 'w4', 'label': '~'}]
+        panes = [{'pane_id': 'w1:p2', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'control.lead'},
+                 {'pane_id': 'w1:p3', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'review.overseer'},
+                 {'pane_id': 'w2:p2', 'tab_id': 'w2:t2', 'workspace_id': 'w2', 'label': 'control.lead'}]
+        with self.herdr(workspaces, panes), mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w4'}):
+            runs = self.runs(self.drive(self.menu.show_in_herdr, team='t', seats=self.SEATS, agent='review.overseer'))
+        self.assertEqual(runs, ['herdr workspace close w2', 'herdr pane zoom w1:p2 --off', 'herdr tab focus w1:t2',
+                                'herdr pane zoom w1:p3 --on', 'herdr workspace focus w1'])
+
+    def test_a_missing_or_incomplete_space_is_rebuilt_under_the_team_name(self):
+        workspaces = [{'workspace_id': 'w1', 'label': 't'}, {'workspace_id': 'w2', 'label': 'openrig:rig:t#l9'}]
+        panes = [{'pane_id': 'w1:p2', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'control.lead'}]
+        with self.herdr(workspaces, panes), mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w2'}):
+            runs = self.runs(self.drive(self.menu.show_in_herdr, team='t', seats=self.SEATS))
+        # w1 lacks the overseer, so it goes; w2 holds this menu, so it stays and becomes the new space here.
+        self.assertEqual(runs[0], 'herdr workspace close w1')
         self.assertTrue(runs[1].endswith('bin/rig terminal open t'))
+        self.assertEqual(runs[2], 'herdr workspace rename w2 t')
         self.assertNotIn('herdr', runs)  # inside herdr it focuses, never nests
 
     def test_loop_dispatches_seats_only_into_a_running_team(self):
@@ -169,6 +194,36 @@ class Menu(unittest.TestCase):
         with mock.patch.dict(os.environ, {'ANTHROPIC_BASE_URL': 'http://127.0.0.1:1'}):
             self.menu.clean_environment()
             self.assertEqual(os.environ['ANTHROPIC_BASE_URL'], 'http://127.0.0.1:1')
+
+
+    def test_fast_arrow_presses_are_read_one_at_a_time(self):
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        tty.setcbreak(slave)  # key-at-a-time input, as while the menu is waiting for a key
+        os.write(master, b'\x1b[B\x1b[B\x1bOAx\x7f\r')
+        with mock.patch.object(self.menu.sys, 'stdin', mock.Mock(fileno=lambda: slave)):
+            keys = [self.menu.read_key() for _ in range(6)]
+        self.assertEqual(keys, ['down', 'down', 'up', 'x', 'backspace', 'enter'])
+        os.write(master, b'\x1b')
+        with mock.patch.object(self.menu.sys, 'stdin', mock.Mock(fileno=lambda: slave)):
+            self.assertEqual(self.menu.read_key(), 'esc')
+
+    def test_keyboard_picking_moves_filters_and_backs_out(self):
+        items = [('alpha', 'a'), ('beta', 'b'), ('alphabet', 'c')]
+
+        def pick(*keys):
+            presses = iter(keys)
+            with mock.patch.object(self.menu, 'keyboard', return_value=True), \
+                    mock.patch.object(self.menu, 'read_key', lambda: next(presses)), redirect_stdout(io.StringIO()):
+                return self.menu.choose('T', items)
+        self.assertEqual(pick('down', 'down', 'enter'), 'c')
+        self.assertEqual(pick('up', 'enter'), 'c')  # up from the top wraps to the bottom
+        self.assertEqual(pick('b', 'enter'), 'b')
+        self.assertEqual(pick('a', 'l', 'p', 'h', 'down', 'enter'), 'c')
+        self.assertEqual(pick('z', 'esc', 'enter'), 'a')  # Esc clears the filter first
+        self.assertIsNone(pick('esc'))
+        self.assertIsNone(pick('left'))
 
 
 if __name__ == '__main__':

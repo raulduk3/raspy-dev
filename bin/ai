@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ai: one menu over the whole AI environment.
 
-Pick a project, a session, a role or a team from numbered lists. The menu hands the
+Arrow keys move, typing filters, Enter opens, Esc or Left goes back, Ctrl+C quits.
+Pick a project, a session, a role or a team. The menu hands the
 terminal to the command that already does that job (ai-environment, ai-session, ai-role,
 dev-workspace, rig, tmux, herdr) and comes back when it exits. It keeps no state of its
 own. `ai <text>` jumps straight to the project whose name matches. AI_MENU_DRY_RUN=1
@@ -12,10 +13,13 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import subprocess
 import sys
+import termios
 import time
+import tty
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.dont_write_bytecode = True
@@ -55,19 +59,38 @@ def tool(name):
     return [sys.executable, str(ROOT / "bin" / name)]
 
 
-def run(argv, cwd=None, extra=None):
-    """Hand the terminal to a command and come back when it exits."""
+def run(argv, cwd=None, extra=None, pause=False):
+    """Hand the terminal to a command and come back when it exits. With pause, or when the
+    command fails, its output stays on screen until a key is pressed."""
     if DRY:
         tail = "".join(f" {k}={v}" for k, v in (extra or {}).items())
         print("RUN " + " ".join(str(a) for a in argv) + (f"  in {cwd}" if cwd else "") + tail)
         return 0
+    if keyboard():
+        sys.stdout.write(CLEAR + SHOW)
+        sys.stdout.flush()
     try:
-        return subprocess.run([str(a) for a in argv], cwd=cwd, env={**os.environ, **(extra or {})}).returncode
+        code = subprocess.run([str(a) for a in argv], cwd=cwd, env={**os.environ, **(extra or {})}).returncode
     except KeyboardInterrupt:
-        return 130
+        code = 130
     except OSError as error:
         print(f"  could not start {argv[0]}: {error}")
-        return 127
+        code = 127
+    if pause or code not in (0, 130):
+        wait()
+    return code
+
+
+def note(text):
+    """A message the user must see before the menu redraws over it."""
+    print(f"\n  {text}")
+    wait()
+
+
+def wait():
+    if keyboard():
+        print("\n  Press any key to go back.")
+        read_key()
 
 
 def read_json(argv):
@@ -79,6 +102,8 @@ def read_json(argv):
 
 
 def ask(prompt):
+    if keyboard():
+        sys.stdout.write(SHOW)
     try:
         return input(prompt).strip()
     except EOFError:
@@ -89,7 +114,77 @@ def confirm(question):
     return ask(f"{question} [y/N] ").lower() in ("y", "yes")
 
 
+CLEAR, SHOW, HIDE, BOLD, DIM, INVERT, RESET = "\x1b[H\x1b[2J", "\x1b[?25h", "\x1b[?25l", "\x1b[1m", "\x1b[2m", "\x1b[7m", "\x1b[0m"
+KEYS = {"\x1b[A": "up", "\x1b[B": "down", "\x1b[C": "right", "\x1b[D": "left", "\x1bOA": "up", "\x1bOB": "down",
+        "\x1bOC": "right", "\x1bOD": "left", "\x1b[5~": "pageup", "\x1b[6~": "pagedown", "\x1b": "esc",
+        "\r": "enter", "\n": "enter", "\x7f": "backspace", "\x08": "backspace"}
+
+
+def keyboard():
+    return not DRY and sys.stdin.isatty() and sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
+
+
+def read_key():
+    """One keypress, with arrow keys decoded. Ctrl+C still interrupts."""
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd, termios.TCSANOW)  # the default mode change would discard keys typed ahead
+        key = os.read(fd, 1).decode(errors="ignore")
+        # An escape sequence is ESC, [ or O, then bytes up to a letter or ~. A lone ESC is Esc.
+        if key == "\x1b" and select.select([fd], [], [], 0.05)[0]:
+            key += os.read(fd, 1).decode(errors="ignore")
+            while key[-1] in "[O0123456789;" and len(key) < 8:
+                key += os.read(fd, 1).decode(errors="ignore")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+    return KEYS.get(key, key)
+
+
 def choose(title, items, hint=None):
+    """Arrow keys move, typing filters, Enter picks, Esc or Left goes back. Without a
+    terminal (a pipe, a test) it reads numbers instead."""
+    if not keyboard():
+        return choose_numbered(title, items, hint)
+    query, index, top = "", 0, 0
+    try:
+        while True:
+            shown = [item for item in items if query.lower() in item[0].lower()]
+            index = max(0, min(index, len(shown) - 1))
+            height = max(3, shutil.get_terminal_size().lines - 7)
+            top = min(max(top, index - height + 1), index)
+            lines = [CLEAR + HIDE + f"{BOLD}{title}{RESET}"]
+            lines.append(f"{DIM}{hint}{RESET}" if hint else "")
+            lines.append(f"Filter: {query}" if query else f"{DIM}Type to filter{RESET}")
+            for number, (label, _) in enumerate(shown[top:top + height], top):
+                lines.append(f"{INVERT} {label} {RESET}" if number == index else f"  {label}")
+            if not shown:
+                lines.append(f"{DIM}  nothing matches{RESET}")
+            if len(shown) > height:
+                lines.append(f"{DIM}  {index + 1} of {len(shown)}{RESET}")
+            lines.append(f"\n{DIM}↑↓ move · Enter open · Esc back · Ctrl+C quit{RESET}")
+            sys.stdout.write("\n".join(lines))
+            sys.stdout.flush()
+            key = read_key()
+            if key in ("up", "down", "pageup", "pagedown"):
+                step = {"up": -1, "down": 1, "pageup": -height, "pagedown": height}[key]
+                index = (index + step) % len(shown) if shown and abs(step) == 1 else index + step
+            elif key in ("enter", "right") and shown:
+                return shown[index][1]
+            elif key == "esc" and query:
+                query, index = "", 0
+            elif key in ("esc", "left"):
+                return None
+            elif key == "backspace":
+                query, index = query[:-1], 0
+            elif len(key) == 1 and key.isprintable():
+                query, index = query + key, 0
+    finally:
+        sys.stdout.write(CLEAR + SHOW)
+        sys.stdout.flush()
+
+
+def choose_numbered(title, items, hint=None):
     """A number picks, other text filters the list, Enter or b goes back, q quits."""
     query = ""
     while True:
@@ -156,9 +251,17 @@ def project_for(path):
     return next((p for p in catalog() if identity and p["common_dir"] == identity), None)
 
 
+def touched(project):
+    """When the repository last changed: its HEAD log or index, whichever is newer."""
+    common = Path(project["common_dir"] or "")
+    return max((f.stat().st_mtime for f in (common / "logs/HEAD", common / "index") if f.is_file()), default=0)
+
+
 def projects_menu(query=""):
-    projects = catalog()
-    items = [(f"{name(p)} · {p['repo'] or p['group']}" + (" · loop" if p["loop_enabled"] else ""), p)
+    projects = sorted(catalog(), key=touched, reverse=True)
+    width = max((len(name(p)) for p in projects), default=0)
+    items = [(f"{name(p):<{width}}  {DIM if keyboard() else ''}{p['repo'] or p['group']} · changed {ago(touched(p))}"
+              + (" · loop" if p["loop_enabled"] else "") + (RESET if keyboard() else ""), p)
              for p in projects if query.lower() in name(p).lower()]
     if query and len(items) == 1:
         return project_menu(items[0][1])
@@ -232,10 +335,10 @@ def open_client(project, client):
 
 
 def accounts_menu():
-    items = [("Usage for every account", lambda: run(tool("ai-usage"))),
+    items = [("Usage for every account", lambda: run(tool("ai-usage"), pause=True)),
              ("Sign in to an account", sign_in),
-             ("Check the whole setup", lambda: run(tool("ai-env") + ["doctor"])),
-             ("Refresh the session list, about 20 seconds", lambda: run(tool("ai-session") + ["scan"]))]
+             ("Check the whole setup", lambda: run(tool("ai-env") + ["doctor"], pause=True)),
+             ("Refresh the session list, about 20 seconds", lambda: run(tool("ai-session") + ["scan"], pause=True))]
     while (pick := choose("Accounts and setup", items)) is not None:
         pick()
 
@@ -302,7 +405,7 @@ def new_conversation(agent, project):
         return None
     created = read_json(argv)
     if not created or "id" not in created:
-        print("  The conversation could not be created; run the same step from ai-session to see why.")
+        note("The conversation could not be created; run the same step from ai-session to see why.")
     return created
 
 
@@ -376,47 +479,83 @@ def team_menu(team, project=None):
         if project:
             items += [("Seat a loop worktree", "seat"), ("Unseat a finished worker", "unseat")]
         items.append(("Stop this team", "stop"))
-        pick = choose(f"Team {team}", items, "Pick an agent to open it. Ctrl+b then d leaves it running.")
+        pick = choose(f"Team {team}", items, "Pick an agent to open it inside this team's herdr space.")
         if pick is None:
             return
         if pick == "view":
-            herdr_view(team)
+            show_in_herdr(team, rows) if shutil.which("herdr") else note("herdr is not installed.")
         elif pick == "stop":
             if confirm(f"Stop every agent in {team}? OpenRig keeps a snapshot."):
                 run(tool("rig") + ["down", rig_id or team])
+                for space in team_spaces(team) if shutil.which("herdr") else []:
+                    quiet(["herdr", "workspace", "close", space["workspace_id"]])
                 return
         elif pick in ("seat", "unseat"):
             worker_seat(project, team, pick)
         elif seat_state(pick) == "stopped":
             if confirm(f"{pick['logicalId']} is stopped. Relaunch it with its saved conversation?"):
                 run(tool("rig") + ["launch", rig_id, pick["logicalId"]])
+        elif shutil.which("herdr"):
+            show_in_herdr(team, rows, pick["logicalId"])
         else:
             session = pick["canonicalSessionName"]
             run(["tmux", "switch-client", "-t", session] if os.environ.get("TMUX") else ["tmux", "attach", "-t", session])
 
 
-def herdr_view(team):
-    if not shutil.which("herdr"):
-        print("  herdr is not installed. Pick one agent from the list to open it on its own.")
-        return
-    pattern = re.compile(rf"openrig:(rig:{re.escape(team)}#|pod:{re.escape(team)}/)")
+def quiet(argv):
+    """A control call whose output means nothing to the user: herdr's replies, OpenRig's tile list."""
+    if DRY:
+        return run(argv)
+    return subprocess.run([str(a) for a in argv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 
-    def views():
-        listing = read_json(["herdr", "workspace", "list"]) or {}
-        return [w for w in listing.get("result", {}).get("workspaces", []) if pattern.match(w.get("label", ""))]
 
-    # Each open adds a workspace; replace the old ones so there is one view per team.
-    # Closing a view only detaches its viewers; no agent stops.
+def herdr_json(*args):
+    return (read_json(["herdr", *args]) or {}).get("result", {})
+
+
+def team_spaces(team):
+    """Every herdr space showing this team: OpenRig's own views and the one this menu names."""
+    pattern = re.compile(rf"openrig:(rig:{re.escape(team)}#|pod:{re.escape(team)}/)|{re.escape(team)}$")
+    return [w for w in herdr_json("workspace", "list").get("workspaces", []) if pattern.match(w.get("label", ""))]
+
+
+def team_space(team, agents):
+    """One herdr space per team, named after it. It is reused while it still holds a tile for
+    every running agent, and rebuilt otherwise. Other views of the team are closed; closing a
+    view only detaches its viewers, and no agent stops."""
+    panes = herdr_json("pane", "list").get("panes", [])
+    tiles = lambda space: {p.get("label") for p in panes if p["workspace_id"] == space["workspace_id"]}
+    spaces = team_spaces(team)
+    keep = next((w for w in spaces if w["label"] == team and set(agents) <= tiles(w)), None)
     here = os.environ.get("HERDR_WORKSPACE_ID")
-    for old in views():
-        if old["workspace_id"] != here:  # never close the view this menu is running in
-            run(["herdr", "workspace", "close", old["workspace_id"]])
-    run(tool("rig") + ["terminal", "open", team])
-    fresh = views()
-    if fresh:
-        run(["herdr", "workspace", "focus", fresh[-1]["workspace_id"]])
+    for space in spaces:
+        if space is not keep and space["workspace_id"] != here:
+            quiet(["herdr", "workspace", "close", space["workspace_id"]])
+    if keep is None:
+        quiet(tool("rig") + ["terminal", "open", team])
+        fresh = [w for w in team_spaces(team) if w["label"] != team]
+        if not fresh:
+            note(f"OpenRig could not show {team} in herdr; pick an agent to open it on its own.")
+            return None
+        keep = fresh[-1]
+        quiet(["herdr", "workspace", "rename", keep["workspace_id"], team])
+    return keep["workspace_id"]
+
+
+def show_in_herdr(team, seats, agent=None):
+    """Bring up the team's space; with an agent, zoom its tile, without one, show them all."""
+    space = team_space(team, [s["logicalId"] for s in seats if seat_state(s) != "stopped"])
+    if space is None:
+        return
+    for pane in herdr_json("pane", "list").get("panes", []):
+        if pane["workspace_id"] == space and pane.get("label"):
+            chosen = pane["label"] == agent
+            if chosen:
+                quiet(["herdr", "tab", "focus", pane["tab_id"]])
+            quiet(["herdr", "pane", "zoom", pane["pane_id"], "--on" if chosen else "--off"])
+    quiet(["herdr", "workspace", "focus", space])
     if not os.environ.get("HERDR_ENV"):
-        print("  Opening herdr. Ctrl+b then q leaves it; every agent keeps running.")
+        print(f"  Opening {team} in herdr. Ctrl+b then q comes back here; every agent keeps running.")
         run(["herdr"])
 
 
@@ -437,16 +576,17 @@ def worker_seat(project, team, action):
     if folder is None:
         return
     if action == "unseat":
-        run(tool("dev-workspace") + ["remove-worker", "--rig", team, "--cwd", folder])
+        run(tool("dev-workspace") + ["remove-worker", "--rig", team, "--cwd", folder], pause=True)
         issue = re.match(r"loop-(\d+)-", folder.name)
         if issue and project["repo"]:
-            print(f"  Folding stays your own step. When you have read the diff, run:\n"
-                  f"  dev-loop fold {project['repo']} {issue.group(1)}")
+            note(f"Folding stays your own step. When you have read the diff, run:\n"
+                 f"  dev-loop fold {project['repo']} {issue.group(1)}")
         return
     client = choose("Which agent?", [("Claude", "claude"), ("Codex", "codex")])
     account = client and pick_account(client)
     if account:
-        run(tool("dev-workspace") + ["add-worker", client, "--rig", team, "--cwd", folder, "--account", account])
+        run(tool("dev-workspace") + ["add-worker", client, "--rig", team, "--cwd", folder, "--account", account],
+            pause=True)
 
 
 # Loop -----------------------------------------------------------------------------------
@@ -462,11 +602,11 @@ def loop_menu(project):
     while (verb := choose(f"Development loop · {project['repo']}", verbs, hint)) is not None:
         if verb == "seats":
             if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
-                print(f"  Start {team} first, under This project's team.")
+                note(f"Start {team} first, under This project's team.")
                 continue
-            run(tool("ai-work") + ["loop", project["id"], "go"], extra={"LOOP_SEAT_RIG": team})
+            run(tool("ai-work") + ["loop", project["id"], "go"], extra={"LOOP_SEAT_RIG": team}, pause=True)
         else:
-            run(tool("ai-work") + ["loop", project["id"], verb])
+            run(tool("ai-work") + ["loop", project["id"], verb], pause=True)
 
 
 # Home -----------------------------------------------------------------------------------
@@ -480,7 +620,7 @@ def home():
                   ("Teams", teams_menu), ("Accounts and setup", accounts_menu)]
         bad = accounts.conflicts(os.environ)
         hint = ("This shell carries provider overrides, so launches will refuse: " + ", ".join(bad)
-                if bad else "Enter goes back, q quits, text filters a list.")
+                if bad else None if keyboard() else "Enter goes back, q quits, text filters a list.")
         pick = choose("AI environment", items, hint)
         if pick is None:
             return
