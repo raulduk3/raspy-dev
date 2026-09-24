@@ -151,7 +151,7 @@ else:
         self.assertEqual(data['quota'], [{'limit_id': 'codex', 'primary': {'usedPercent': 25, 'windowDurationMins': 300, 'resetsAt': 123}}])
         calls = [json.loads(s) for s in self.log.read_text().splitlines()]
         self.assertTrue(all(c['argv'][1:] == ['app-server'] for c in calls))
-        self.assertTrue(all(c['codex'] == str(self.native) and c['claude'] is None for c in calls))
+        self.assertTrue(all(c['codex'] == str(self.native.resolve()) and c['claude'] is None for c in calls))
 
     def test_inherited_codex_tokens_and_workload_identity_cannot_override_profile(self):
         self.bind('openai-gmail')

@@ -4,7 +4,7 @@ A small personal development platform for keeping AI-assisted software work orga
 
 It is not a framework, a product, or a replacement for GitHub. It is the local glue around my editor, terminal, coding agents, repository templates, checks, native-account selection, and project workflow. The goal is simple: every tool can help, but GitHub remains the ledger and a human remains the release authority.
 
-The style is deliberately modest and opinionated: inspired by the small-stack clarity of Theo/T3-style tooling and the practical "personal stack" spirit of tiny local systems that do one job well.
+The style is deliberately modest and opinionated: inspired by the small-stack clarity of Theo/T3-style tooling and the practical pstack spirit of tiny local systems that do one job well.
 
 ## What it connects
 
