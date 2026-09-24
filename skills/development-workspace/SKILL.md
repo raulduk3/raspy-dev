@@ -1,0 +1,49 @@
+---
+name: development-workspace
+description: >-
+  Locate and enter a project or resume an existing development assignment from
+  a native coding session. Resolve workspace and ownership before shared edits;
+  do not automatically start a sprint or adopt an agent identity.
+---
+
+# Development workspace
+
+Ricky gives the goal in ordinary language. Resolve the working context, then
+continue using the skills relevant to that goal. Shared `session-entry` handles
+general orientation; this skill handles project attachment and continuity.
+
+1. **Locate the work.** Read the repository instructions and inspect its actual
+   Git root, branch and worktree. Use `ai-work --help` and the existing catalog
+   when locating a project. A proposed project can use an explicit formation
+   directory; do not invent a repository association from a window title.
+2. **Reconcile ownership.** Inspect the existing assignment, checkpoint and live
+   workers before editing shared files. A direct Claude/Codex window is independent
+   unless explicitly associated with existing work. For assigned work, retain its
+   coordinator and isolated worktree. A Rig seat or new terminal does not create
+   a sprint or authorize another writer.
+3. **Choose the procedure.** For an Iztac conversation, use
+   [Iztac engineering](../../agents/iztac/skills/iztac-engineering/SKILL.md).
+   An assigned engineering worker uses the relevant portion of its supplied
+   workflow without assuming Iztac's identity. Independent work follows repository
+   instructions and the appropriate task skill; do not load the full Iztac
+   framework automatically. `distill`/`intake` handle source-to-requirement work;
+   `loop` applies only when operating the existing development loop.
+4. **Act and explain.** State the outcome, useful completion check and next action
+   briefly for substantial work. Use native tools, explain decisions in terms of
+   the concrete task, and distinguish observed results from assumptions. A status
+   question does not authorize implementation, recurring monitoring or dispatch.
+5. **Keep continuity.** Use the existing conversation/task checkpoint. Record
+   project, branch/worktree, relevant native session references, verified progress,
+   evidence, running work and the next action. `ai-session handoff --help` describes
+   revision-checked updates for indexed sessions. Keep unindexed work's checkpoint
+   with its existing task artifact; do not create another task database. Native
+   transcripts stay native, and unknown account attribution stays unknown.
+
+Use the account service/native controls for new execution environments; do not
+change active credentials as part of project attachment. OpenRig owns supported
+worker terminals and messaging. A running loop retains ownership until an explicit
+handover. Follow repository publication rules and the user's authorization.
+
+The fuller adapted pstack workflow and principles live with Iztac. This shared
+entry point deliberately contains no separate copy of them and no OpenClaw-only
+tooling or scheduled morning-brief procedure.
