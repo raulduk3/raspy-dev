@@ -100,6 +100,16 @@ class Doctor(unittest.TestCase):
         os.symlink(alternate / 'skills/loop', shared / 'loop')
         self.assertEqual(self.run_doctor('--platform-root', str(alternate))['skills']['.claude/skills']['state'], 'ok')
 
+    def test_skills_are_compared_with_the_activated_release_when_one_exists(self):
+        release = self.home / '.local/share/dev-platform/releases/r1'
+        (release / 'skills/new-only').mkdir(parents=True)
+        (release / 'skills/new-only/SKILL.md').write_text('# New\n')
+        (self.home / '.local/share/dev-platform/current').symlink_to(release)
+        (self.home / '.agents/skills').mkdir(parents=True)
+        missing = self.run_doctor()['skills']['.agents/skills']
+        self.assertIn('new-only', missing.get('canonical_missing', []) + missing.get('missing', []))
+        self.assertNotIn('loop', missing.get('canonical_missing', []))  # the checkout's list no longer applies
+
     def test_shared_published_override_is_healthy_but_client_drift_is_not(self):
         published = self.home / 'workshop/loop'
         published.mkdir(parents=True)

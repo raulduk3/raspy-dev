@@ -183,10 +183,15 @@ def main(argv=None):
     d.add_argument('--json', action='store_true')
     d.add_argument('--probe-laya', action='store_true')
     d.add_argument('--home')
-    d.add_argument('--platform-root', help='canonical platform checkout (default ~/Dev/dev-platform)')
+    d.add_argument('--platform-root', help='platform to compare against (default: the activated release, '
+                                           'else ~/Dev/dev-platform)')
     a = p.parse_args(argv)
     home = Path(a.home or Path.home())
-    platform = Path(a.platform_root).expanduser() if a.platform_root else home / 'Dev/dev-platform'
+    # Skills are expected to match what is installed, not whichever branch the development
+    # checkout happens to be on; the checkout is only the fallback before a first release.
+    installed = home / '.local/share/dev-platform/current'
+    platform = (Path(a.platform_root).expanduser() if a.platform_root
+                else installed if (installed / 'skills').is_dir() else home / 'Dev/dev-platform')
     report = doctor(home, platform, a.probe_laya)
     if a.json:
         print(json.dumps(report, indent=2, sort_keys=True))
