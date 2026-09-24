@@ -104,9 +104,8 @@ class Store:
         folder = self.root / 'events' / check_id(sid)
         folder.mkdir(exist_ok=True, mode=0o700)
         name = f'{time.time_ns():020d}-{os.getpid()}-{uuid.uuid4().hex[:12]}.json'
-        fd = os.open(folder / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as handle:
-            json.dump(dict(fields, kind=kind, at=time.time()), handle, sort_keys=True)
+        self._write_atomic(folder / name,
+                           json.dumps(dict(fields, kind=kind, at=time.time()), sort_keys=True) + '\n')
 
     def events(self, sid):
         folder = self.root / 'events' / check_id(sid)

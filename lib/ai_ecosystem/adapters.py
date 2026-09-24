@@ -21,8 +21,15 @@ class Source:
 
 
 def _rec(native_id, cwd=None, title=None, branch=None, updated_at=None, fmt='supported', extra=None):
-    return {'native_id': str(native_id), 'cwd': cwd, 'title': title, 'branch': branch,
-            'updated_at': updated_at, 'format': fmt, 'native': extra or {}}
+    if not isinstance(native_id, (str, int)) or isinstance(native_id, bool):
+        raise ValueError('unsupported native identifier')
+    # Native metadata can be malformed. Never copy nested prompt/request objects through
+    # a field that normally contains a scalar title, path, date or identifier.
+    scalar = lambda value: value if value is None or isinstance(value, (str, int, float, bool)) else None
+    text = lambda value: value if isinstance(value, str) else None
+    return {'native_id': str(native_id), 'cwd': text(cwd), 'title': text(title), 'branch': text(branch),
+            'updated_at': scalar(updated_at), 'format': fmt,
+            'native': {key: scalar(value) for key, value in (extra or {}).items()}}
 
 
 def codex_homes(home):
@@ -33,6 +40,8 @@ def codex_homes(home):
 
 
 def read_codex(codex_home):
+    if not codex_home.is_dir():
+        raise FileNotFoundError('native store unavailable')
     dbs = sorted(codex_home.glob('state_*.sqlite'), key=lambda p: p.stat().st_mtime)
     if dbs:
         conn = sqlite3.connect(f'file:{dbs[-1]}?mode=ro', uri=True)
@@ -50,7 +59,7 @@ def read_codex(codex_home):
         return
     index = codex_home / 'session_index.jsonl'
     if not index.exists():
-        return
+        raise FileNotFoundError('native metadata unavailable')
     with index.open() as handle:
         for line in handle:
             try:
@@ -79,20 +88,31 @@ def _claude_header(path):
 
 
 def read_claude(claude_home):
+    if not (claude_home / 'projects').is_dir():
+        raise FileNotFoundError('native store unavailable')
     seen = set()
     for index in sorted(claude_home.glob('projects/*/sessions-index.json')):
         entries = json.loads(index.read_text()).get('entries', [])
         for e in entries:
             if isinstance(e, dict) and e.get('sessionId'):
                 seen.add(e['sessionId'])
+                if isinstance(e.get('fullPath'), str) and e['fullPath']:
+                    path = Path(e['fullPath'])
+                    if not path.is_absolute():
+                        path = index.parent / path
+                else:
+                    path = index.parent / f"{e['sessionId']}.jsonl"
                 yield _rec(e['sessionId'], e.get('projectPath'), e.get('customTitle'), e.get('gitBranch'),
-                           e.get('modified'), extra={'sidechain': bool(e.get('isSidechain'))})
+                           e.get('modified'), extra={'sidechain': bool(e.get('isSidechain')),
+                           'index_path': str(index), 'transcript_path': str(path),
+                           'transcript_missing': not path.is_file()})
     for path in sorted(claude_home.glob('projects/*/*.jsonl')):
         if path.stem in seen:
             continue
         h = _claude_header(path)
         if h.get('sessionId') == path.stem:
-            yield _rec(path.stem, h.get('cwd'), h.get('customTitle'), h.get('gitBranch'), h.get('timestamp'))
+            yield _rec(path.stem, h.get('cwd'), h.get('customTitle'), h.get('gitBranch'), h.get('timestamp'),
+                       extra={'transcript_path': str(path), 'transcript_missing': False})
 
 
 def read_openclaw(timeout=30):
@@ -109,8 +129,13 @@ def read_openclaw(timeout=30):
     stores = {s.get('agentId'): s.get('path') for s in data.get('stores') or [] if isinstance(s, dict)}
     for s in data['sessions']:
         if isinstance(s, dict) and s.get('sessionId'):
-            yield _rec(s['sessionId'], None, s.get('key'), None, s.get('updatedAt'),
-                       extra={'agentId': s.get('agentId'), 'key': s.get('key'), 'store': stores.get(s.get('agentId'))})
+            agent, native_store = s.get('agentId'), stores.get(s.get('agentId'))
+            if not isinstance(agent, str) or not agent or not isinstance(native_store, str) or not native_store:
+                raise RuntimeError('openclaw native agent/store identity unavailable')
+            rec = _rec(s['sessionId'], None, s.get('key'), None, s.get('updatedAt'),
+                       extra={'agentId': agent, 'key': s.get('key'), 'store': native_store})
+            rec['identity_store'] = json.dumps([agent, native_store], separators=(',', ':'))
+            yield rec
     if data.get('hasMore') or data.get('errors'):
         yield {'truncated': True}
 
@@ -120,6 +145,8 @@ def vscode_roots(home):
 
 
 def read_vscode(root):
+    if not root.is_dir():
+        raise FileNotFoundError('native store unavailable')
     for ws in sorted(root.glob('*')):
         folder = None
         try:
@@ -142,7 +169,7 @@ def read_vscode(root):
             yield _rec(native, folder, title, None, d.get('lastMessageDate') or d.get('creationDate'))
 
 
-def discover(home=None, openclaw=True):
+def discover(home=None, openclaw=True, previous=None):
     home = Path(home or Path.home())
     sources = []
     for path, owner, store in codex_homes(home):
@@ -156,4 +183,14 @@ def discover(home=None, openclaw=True):
     for root in vscode_roots(home):
         if root.is_dir():
             sources.append(Source(f'vscode:{root}', 'copilot', str(root), 'vscode', lambda r=root: read_vscode(r)))
+    # A vanished previously indexed store is unavailable, not an empty successful scan.
+    keys = {s.key for s in sources}
+    for key, old in (previous or {}).items():
+        if key in keys or (old.get('runtime') == 'openclaw' and not openclaw):
+            continue
+        if not all(old.get(k) for k in ('runtime', 'store', 'owner')):
+            continue
+        def unavailable():
+            raise FileNotFoundError('previous native source unavailable')
+        sources.append(Source(key, old['runtime'], old['store'], old['owner'], unavailable))
     return sources
