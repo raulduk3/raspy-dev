@@ -2,8 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { historyExtension } from './history-tool.mjs';
 
-export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile }) {
+export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive }) {
   const { agent, scope, binding } = conversation;
   if (!['morty','iztac','neo'].includes(agent)) throw new Error('Unknown agent role');
   const project = ['project','formation'].includes(scope?.kind);
@@ -34,6 +35,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     cwd, agentDir, settingsManager,
     noExtensions:true, noSkills:true, noPromptTemplates:true, noThemes:true,
     additionalExtensionPaths:[path.join(platformRoot,'integrations/pi/perplexity.ts')],
+    extensionFactories:historyArchive ? [historyExtension({archive:historyArchive,agent})] : [],
     noContextFiles:!project,
     additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
     agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(project?base.agentsFiles:[])]}),
