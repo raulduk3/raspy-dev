@@ -8,6 +8,36 @@ import unittest
 CLI = Path(__file__).resolve().parents[1] / 'bin/journal'
 
 class Journal(unittest.TestCase):
+    def test_shortlists_sort_then_limit_and_preserve_sources(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'tasks.md').write_text(
+                '- [ ] Undated ⏫\n'
+                '- [ ] Later 📅 2026-09-25 🔺\n'
+                '- [ ] Normal 📅 2026-09-24\n'
+                '- [ ] High 📅 2026-09-24 ⏫\n'
+                '- [ ] Tie 📅 2026-09-24 ⏫\n'
+                '- [ ] Invalid 📅 2026-02-30\n'
+                '- [x] Recent ✅ 2026-09-23\n'
+                '- [x] Older ✅ 2026-09-01\n')
+            for name in ('omit.md', 'second.md'):
+                (root/name).write_text('- [ ] Excluded 📅 2020-01-01 🔺\n')
+            before = {p: p.read_bytes() for p in root.iterdir()}
+            def run(*args):
+                result = subprocess.run([str(CLI), '--root', str(root), 'tasks', '--json',
+                                         '--exclude-path', 'omit.md', '--exclude-path', 'second.md',
+                                         *args], capture_output=True, text=True, check=True)
+                return json.loads(result.stdout)['tasks']
+            self.assertEqual([r['line'] for r in run('--sort','due','--sort','priority','--limit','4')], [4,5,3,2])
+            self.assertEqual([r['line'] for r in run('--sort','priority','--sort','due')], [2,4,5,1,3,6])
+            self.assertEqual([r['line'] for r in run('--status','done','--sort','done')], [8,7])
+            self.assertEqual(run('--limit','0'), [])
+            self.assertEqual([r['line'] for r in run()], [1,2,3,4,5,6])
+            for value in ('-1','not-a-number'):
+                result = subprocess.run([str(CLI),'--root',str(root),'tasks','--limit',value],capture_output=True)
+                self.assertEqual(result.returncode, 2)
+            self.assertEqual(before, {p:p.read_bytes() for p in before})
+
     def test_real_notes_preserved_and_filtered(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

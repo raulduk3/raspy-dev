@@ -6,9 +6,14 @@
 bin/journal --root /path/to/journal tasks
 bin/journal --root /path/to/journal tasks --tag work --due-on-or-before 2026-09-24
 bin/journal --root /path/to/journal tasks --status all --path '2. projects/' --json
+bin/journal --root /path/to/journal tasks --tag finance --sort due --sort priority --limit 10
+bin/journal --root /path/to/journal tasks --exclude-path 'IT Certs/' --exclude-path '5. archive/' --sort priority --sort due --limit 15
+bin/journal --root /path/to/journal tasks --status done --include-history --sort done
 ```
 
 Default output gives absolute file paths and line numbers. JSON gives the root plus relative paths, line numbers, original task text, status, tags, priority, date fields, recurrence presence, and warnings. `--text` is a literal case-insensitive task-text filter. For full-note text search, use `rg -n --glob '*.md' 'search text' /path/to/journal`.
+
+Repeat `--exclude-path` to exclude any matching literal, case-sensitive path substring. Repeat `--sort` in primary-to-secondary order: date fields sort oldest first with absent/invalid dates last; priority sorts highest through lowest; path sorts lexically. Ties retain source path/line order. `--limit` applies after filtering and sorting; zero returns no rows. Without these options, existing source order and unlimited output remain. These controls do not implement Obsidian urgency scoring, dependency evaluation or compound OR queries. The priority example above is a shortlist, not an equivalent replacement for the old unblocked/urgent view.
 
 The default includes unchecked, in-progress, and unknown-status task lines. Unknown states remain visible for review. It excludes `0. morty`, `5. archive`, `6. templates`, and `7. data views`; `--include-history` includes them. Hidden paths and symlinks are always skipped. Historical tasks elsewhere in the corpus remain visible: this is a source view, not a claim that every unchecked task is still relevant. Fenced examples and frontmatter are skipped. Blockquoted checklists and arbitrary Markdown extensions are not parsed.
 
