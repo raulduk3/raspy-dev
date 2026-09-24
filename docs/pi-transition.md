@@ -116,3 +116,23 @@ the original transcript stays unchanged. It does not render the terminal, supply
 a verified account environment, restrict native model/login menus or connect the
 OS writer lock. Those remain launcher acceptance requirements. No replacement
 TUI or custom branching/transcript format has been introduced.
+
+## Native terminal boundary
+
+`integrations/pi/role-terminal.mjs::runRoleTerminal` opens Pi's own
+`InteractiveMode` using the bound runtime. It requires a real terminal and the
+inherited launch-lock descriptor matching this conversation's lock file. The
+descriptor check confirms wiring, not an unforgeable same-user security boundary;
+the Python exec launcher must acquire the actual OS lock first.
+
+`python3 -B integrations/pi/check-role-terminal.py` performs that real exec/PTY
+chain with a temporary home, empty auth store, explicit offline mode and no
+prompts. It observes native rendering of the session-entry context, role workspace
+and Perplexity extension, exits with native Ctrl+D, then reacquires the same lock.
+The check invokes the actual terminal implementation rather than a fake terminal.
+
+This connects terminal rendering and writer ownership in the tested path. A
+user-facing command still needs to resolve a real conversation, identity and
+verified account through the account service. Authenticated inference, protected
+search credentials, real account attribution and management of model/login menu
+choices remain open; the offline fixture's account reference is explicitly fake.
