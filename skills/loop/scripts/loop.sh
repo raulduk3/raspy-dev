@@ -26,9 +26,9 @@
 #   <date>/workers/<issue>.{pid,log}
 #
 # Personal repositories are listed in ~/.config/dev-platform/personal.conf (the guard hook's
-# rule); every other repository is professional. In a personal repository workers run under the
-# guard hook alone and the assistant may run close --push; in a professional one workers run with
-# an explicit allow list and close refuses a body that names a tool or a model (the ghost check).
+# rule); every other repository is professional. Workers use an explicit allow list everywhere.
+# In a personal repository the assistant may run close --push; in a professional one close
+# refuses a body that names a tool or a model (the ghost check).
 #
 # Verbs. assistant = on the owner's word in that session; owner = the owner in a terminal
 # (refused without one); automation = the scheduled tick.
@@ -200,12 +200,12 @@ section() {  # <file> <header text> -> the section body, without its header
   awk -v h="## $2" '$0==h {f=1; next} /^## / {f=0} f' "$1" | sed '/^Closes #[0-9]*$/d'
 }
 dispatch() {  # <issue>...
-  local dir base i j title labels scope slug kind branch wt model exclude f
+  local dir base i j title labels scope slug kind branch wt model exclude
   dir="$(repo_dir)"
   base="$(git -C "$dir" rev-parse --short=8 "$day")"
   # The worker's untracked files are excluded repository-wide (local only, never committed).
   exclude="$(git -C "$dir" rev-parse --path-format=absolute --git-path info/exclude)"; mkdir -p "$(dirname "$exclude")"
-  for f in .worker-brief.md .worker-pr.md .worker-blocked.md; do grep -qx "$f" "$exclude" 2>/dev/null || echo "$f" >> "$exclude"; done
+  grep -qxF '.worker-*' "$exclude" 2>/dev/null || echo '.worker-*' >> "$exclude"
   for i in "$@"; do
     [ "$(running_workers | wc -l | tr -d ' ')" -lt "$CAP" ] || { echo "loop: worker cap reached"; break; }
     j="$(gh issue view "$i" --repo "$repo" --json title,body,labels)"
