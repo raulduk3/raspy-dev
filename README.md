@@ -7,12 +7,12 @@
         │     one tiny cockpit for many AI tools     │
         ╰───────────────┬────────────────────────────╯
                         │
-        ╭───────────────┼────────────────╮
-        │               │                │
-      GitHub          Herdr            OpenRig
-   ledger + PRs    cockpit view       rig seats
-        │               │                │
-        ╰──── VS Code · Claude Code · Codex · Pi ────╯
+        ╭───────────────┼─────────────────────────────╮
+        │               │                             │
+      GitHub          Herdr                        OpenRig
+   ledger + PRs    cockpit view                   rig seats
+        │               │                             │
+        ╰──── VS Code · Claude · LLM · Codex · Pi ────╯
                         │
               checks · skills · sessions
   </pre>
