@@ -429,7 +429,8 @@ class WorkerBoundTests(Fixture):
             time.sleep(0.02)
         self.fail(f'timed out waiting for {path}')
 
-    def detached_supervisor(self, timed_out):
+    def detached_supervisor(self, timed_out, title='Fix "quoted" $(touch leaked)\n parser.',
+                            expected_name='fix(repo): Fix "quoted" $(touch leaked) parser #1'):
         self.setup_remote()
         self.loop('start')
         day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
@@ -438,7 +439,8 @@ class WorkerBoundTests(Fixture):
         self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/fixture', wt)
         (wt / '.worker-brief.md').write_text('Harmless lifecycle fixture only.\n')
         gh = self.fakebin / 'gh'
-        gh.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"labels":[],"body":"Scope: source"}\'\n')
+        issue = {'title': title, 'labels': [], 'body': 'Scope: source'}
+        gh.write_text('#!/usr/bin/env python3\nprint(' + repr(json.dumps(issue)) + ')\n')
         claude = self.fakebin / 'claude'
         claude.write_text('''#!/usr/bin/env python3
 import json, os, sys, time
@@ -446,7 +448,7 @@ from pathlib import Path
 assert sys.stdin.read() == ''
 assert 'DO_NOT_INHERIT' not in os.environ
 assert os.environ['SAFE_FIXTURE'] == 'yes'
-Path('child.started').write_text(json.dumps({'pid': os.getpid(), 'parent': os.getppid()}))
+Path('child.started').write_text(json.dumps({'pid': os.getpid(), 'parent': os.getppid(), 'argv': sys.argv[1:]}))
 print('fixture stdout', flush=True)
 print('fixture stderr', file=sys.stderr, flush=True)
 while not Path('child.release').exists(): time.sleep(0.02)
@@ -467,6 +469,11 @@ sys.exit(7)
             self.wait_for_file(wt / 'child.started')
             metadata = json.loads((wt / 'child.started').read_text())
             child = metadata['pid']
+            argv = metadata['argv']
+            self.assertEqual(argv.count('--name'), 1)
+            self.assertEqual(argv[argv.index('--name') + 1], expected_name)
+            self.assertNotIn('--resume', argv, 'loop resume starts a new attempt, not a native resume')
+            self.assertFalse((wt / 'leaked').exists(), 'issue titles must remain literal arguments')
             supervisor = int((workers / '1.pid').read_text())
             self.assertEqual(supervisor, metadata['parent'], 'PID must name the actual supervisor')
             os.killpg(launcher.pid, signal.SIGTERM)
@@ -504,6 +511,12 @@ sys.exit(7)
 
     def test_supervisor_survives_launcher_group_cleanup_and_bounds_worker(self):
         self.detached_supervisor(timed_out=True)
+
+    def test_worker_display_name_is_bounded(self):
+        self.detached_supervisor(False, 'A' * 100, 'fix(repo): ' + 'A' * 60 + ' #1')
+
+    def test_worker_display_name_handles_missing_title(self):
+        self.detached_supervisor(False, None, 'fix(repo): Implement issue #1')
 
     def test_supervisor_sanitizes_environment_and_reports_exit(self):
         result = self.base / 'worker.exit'

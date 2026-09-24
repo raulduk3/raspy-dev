@@ -22,8 +22,12 @@ repository).
 - When reviewing a checked-out pull request, treat automated review findings as evidence to
   reproduce and disposition in the pull request, never as approval.
 - Stage only the files that belong to the change. Preserve unrelated uncommitted work.
-- Propose the session title on one line in the first reply,
-  `Title: kind(area): Description #ref`.
+- Name your own session automatically once its task is clear, using a supported native
+  naming control; update your generated title when scope changes. Preserve owner-assigned
+  titles and native IDs. Engineering: `kind(area): Description #ref`; other contexts: a
+  concise descriptive title. Follow `docs/session-naming.md` in the platform. If this
+  surface cannot rename natively, offer a title or an explicitly index-only label; never
+  edit native transcripts/databases or rename another agent's live session.
 - In a professional repository, add no attribution trailer or generated-with line to any commit,
   pull request or issue.
 

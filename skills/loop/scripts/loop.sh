@@ -241,13 +241,17 @@ this issue, and any lock digest that guards it.
 Never push, open a pull request, comment on GitHub, merge, mark ready, approve, deploy, restart,
 rebase or amend, or touch another worktree. The owner reviews this branch on this machine.
 EOF
-    launch_worker "$i" "$wt" "$model" "$branch"
+    launch_worker "$i" "$wt" "$model" "$branch" "$title"
   done
 }
 
-launch_worker() {  # issue worktree model branch: start one headless worker in an existing worktree
-  local i="$1" wt="$2" model="$3" branch="$4"
-  local envf common v
+launch_worker() {  # issue worktree model branch title: start a new native conversation
+  local i="$1" wt="$2" model="$3" branch="$4" title="$5"
+  local envf common v session_title description
+  # Display metadata only: no native ID changes or historical session edits.
+  description="$(jq -nr --arg title "$title" '$title | gsub("[[:space:][:cntrl:]]+"; " ") | sub("^ +"; "") | sub("[ .]+$"; "") | .[0:60]')"
+  [ -n "$description" ] || description="Implement issue"
+  session_title="${branch%%/*}(repo): $description #$i"
   common="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)"
   envf="${DEV_PLATFORM_ENV_DIR:-$HOME/.config/dev-platform/env.d}/$(basename "$(dirname "$common")").sh"
   rm -f "$out/workers/$i.exit"
@@ -264,7 +268,7 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
     # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
     python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
       "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
-      claude --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+      claude --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
@@ -376,7 +380,8 @@ case "$verb" in
       [ -f "$wt/.worker-brief.md" ] || { echo "#$i: brief gone, worker finished; review or fold instead"; continue; }
       [ -f "$wt/.worker-blocked.md" ] && { echo "#$i: blocked, widen the scope first"; continue; }
       branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
-      j="$(gh issue view "$i" --repo "$repo" --json labels,body)"
+      j="$(gh issue view "$i" --repo "$repo" --json title,labels,body)"
+      title="$(jq -r '.title // ""' <<<"$j")"
       labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"; model="$(tier_model "$labels")"
       # The owner may have widened Scope: in the issue body since dispatch; the brief carries the current line.
       scope="$(jq -r '(.body // "") | capture("(?m)^Scope: *(?<s>[^\n]+)")? .s // "unspecified"' <<<"$j")"
@@ -387,7 +392,7 @@ s=re.sub(r'^Scope \(only these path prefixes may change\): .*$', lambda m: 'Scop
 open(p,'w').write(s)
 PY
       [ -f "$out/workers/$i.log" ] && mv "$out/workers/$i.log" "$out/workers/$i.log.$(date +%H%M%S)"
-      launch_worker "$i" "$wt" "$model" "$branch"
+      launch_worker "$i" "$wt" "$model" "$branch" "$title"
     done
     ;;
   pause)
