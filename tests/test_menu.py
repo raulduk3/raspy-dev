@@ -88,7 +88,7 @@ class Menu(unittest.TestCase):
         state = self.root / 'state'
         folder = state / 'conversations/conversation-0123456789abcdef0123'
         (folder / 'native/pi').mkdir(parents=True)
-        (folder / 'native/pi/one.jsonl').write_text('{}\n')
+        (folder / 'native/pi/one.jsonl').write_text(self.bound('openai-apple'))
         (folder / 'session.json').write_text(json.dumps({
             'version': 1, 'id': 'conversation-0123456789abcdef0123', 'agent': 'iztac', 'title': 'Research',
             'scope': {'kind': 'project', 'project_id': 'owner-repo-1'}, 'binding': {}, 'created_at': 1}))
@@ -100,6 +100,34 @@ class Menu(unittest.TestCase):
             'bin/ai-role launch conversation-0123456789abcdef0123 --account openai-apple --resume latest'))
         self.assertIn('conversation create --agent iztac --title Research Agent --project owner-repo-1 '
                       f"--workspace {self.project['root']}", self.runs(fresh)[0])
+
+    @staticmethod
+    def bound(account):
+        return json.dumps({'type': 'custom', 'customType': 'dev-platform-binding',
+                           'data': {'conversation': 'c', 'agent': 'morty', 'accountRef': account + ':pi'}}) + '\n'
+
+    def test_switching_pi_accounts_resumes_only_that_accounts_session(self):
+        (self.root / 'pi/openai-gmail').mkdir()
+        state = self.root / 'state'
+        folder = state / 'conversations/conversation-0123456789abcdef0123'
+        native = folder / 'native/pi'
+        native.mkdir(parents=True)
+        (folder / 'session.json').write_text(json.dumps({
+            'version': 1, 'id': 'conversation-0123456789abcdef0123', 'agent': 'morty', 'title': 'Today',
+            'scope': {'kind': 'personal'}, 'binding': {}, 'created_at': 1}))
+        apple = native / 'apple.jsonl'
+        apple.write_text(self.bound('openai-apple'))
+        os.utime(apple, (1, 1))
+        launch = 'bin/ai-role launch conversation-0123456789abcdef0123'
+        with mock.patch.dict(os.environ, {'AI_SESSION_STATE': str(state)}):
+            switched = self.drive(self.menu.role_menu, '1', '2', agent='morty')
+            (native / 'gmail.jsonl').write_text(self.bound('openai-gmail'))
+            back = self.drive(self.menu.role_menu, '1', '1', agent='morty')
+            again = self.drive(self.menu.role_menu, '1', '2', agent='morty')
+        self.assertTrue(self.runs(switched)[0].endswith(f'{launch} --account openai-gmail'))
+        self.assertIn('earlier sessions were on openai-apple', switched)
+        self.assertTrue(self.runs(back)[0].endswith(f'{launch} --account openai-apple --resume {apple.resolve()}'))
+        self.assertTrue(self.runs(again)[0].endswith(f'{launch} --account openai-gmail --resume latest'))
 
     def test_a_project_team_starts_outside_the_repository_under_its_own_name(self):
         with mock.patch.object(self.menu, 'rigs', return_value=[]), \
