@@ -102,3 +102,17 @@ primitive is not yet wired into a public terminal command. Direct SDK callers
 can still bypass it, so the session factory alone does not guarantee exclusive
 ownership. The lock is cooperative and local to a filesystem that supports POSIX
 flock; it is not a distributed coordination protocol for future remote swarms.
+
+`integrations/pi/role-runtime.mjs` connects the session component to Pi's native
+`AgentSessionRuntime`, the host expected by its native terminal UI. `/new`,
+`/resume` and `/fork` reconstruct the same explicit role resources. Resume
+reapplies the conversation's native session directory instead of retaining Pi's
+default-directory fallback; an unpersisted fork retains its native ID, branch
+and association. The native before-switch event rejects outside or unbound
+resume/import targets before the current session is replaced.
+
+The offline session check exercises those native lifecycle operations and verifies
+the original transcript stays unchanged. It does not render the terminal, supply
+a verified account environment, restrict native model/login menus or connect the
+OS writer lock. Those remain launcher acceptance requirements. No replacement
+TUI or custom branching/transcript format has been introduced.

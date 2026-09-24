@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { createRoleSession } from './role-session.mjs';
+import { createRoleRuntime } from './role-runtime.mjs';
 const platformRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pi-role-session-'));
 try {
@@ -42,5 +43,23 @@ try {
   const outside=path.join(root,'outside.jsonl');fs.copyFileSync(file,outside);
   await assert.rejects(()=>createRoleSession({...options,resumeFile:outside}),/in this conversation/);
   assert.deepEqual(fs.readFileSync(file),bytes);
-  console.log(JSON.stringify({passed:true,checks:['real Pi session construction','conversation-local persistence','native resume','account and conversation mismatch rejection','outside resume rejection','existing transcript unchanged'],scope:'Offline SDK and native fixture transcript; no inference, TUI, account verification or concurrent-writer acceptance'},null,2));
+  const runtime=await createRoleRuntime({...options,resumeFile:file});
+  try {
+    runtime.setRebindSession(session=>session.bindExtensions({}));
+    await runtime.session.bindExtensions({});
+    assert.equal((await runtime.newSession()).cancelled,false);
+    assert.equal(runtime.session.sessionManager.getSessionDir(),path.dirname(file));
+    assert.equal((await runtime.switchSession(file)).cancelled,false);
+    assert.equal(runtime.session.sessionManager.getSessionDir(),path.dirname(file));
+    const sessionId=runtime.session.sessionId;
+    assert.equal((await runtime.switchSession(outside)).cancelled,true);
+    assert.equal((await runtime.importFromJsonl(outside)).cancelled,true);
+    assert.equal(runtime.session.sessionId,sessionId);
+    const userEntry=runtime.session.sessionManager.getEntries().find(e=>e.type==='message' && e.message.role==='user');
+    assert.equal((await runtime.fork(userEntry.id,{position:'at'})).cancelled,false);
+    assert.equal(runtime.session.sessionManager.getSessionDir(),path.dirname(file));
+    assert.equal(runtime.session.sessionManager.getEntries().filter(e=>e.type==='custom' && e.customType==='dev-platform-binding').length,1);
+  } finally {await runtime.dispose();}
+  assert.deepEqual(fs.readFileSync(file),bytes);
+  console.log(JSON.stringify({passed:true,checks:['real Pi session construction','conversation-local persistence','native new/resume/fork','account and conversation mismatch rejection','outside resume/import cancelled','existing transcript unchanged'],scope:'Offline native lifecycle and fixture transcript; no inference, terminal rendering, account verification or concurrent-writer acceptance'},null,2));
 } finally {fs.rmSync(root,{recursive:true,force:true});}
