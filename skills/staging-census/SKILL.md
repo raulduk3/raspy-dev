@@ -1,6 +1,6 @@
 ---
 name: staging-census
-description: Enumerate what is running on the Testing host read-only: containers, images and their version labels, rendered compose values, the release t…
+description: "Enumerate what is running on the Testing host read-only: containers, images and their version labels, rendered compose values, the release t…"
 ---
 
 # staging-census

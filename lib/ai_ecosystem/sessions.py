@@ -15,7 +15,7 @@ from .store import MAX_HANDOFF, RevisionConflict, Store, check_id, session_id
 
 NATIVE_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 MERGED = ('cwd', 'title', 'branch', 'updated_at', 'format', 'native')
-KEPT = ('title_override', 'has_handoff')
+KEPT = ('title_override', 'has_handoff', 'conversation_id')
 
 
 def scan(store, sources, limit):
@@ -84,17 +84,31 @@ def resume_plan(m):
     cwd = m.get('cwd')
     if not cwd or not os.path.isabs(cwd):
         return dict(handoff, reason='no absolute working directory recorded')
+    from .accounts import conflicts
+    if conflicts(os.environ):
+        return dict(handoff, reason='conflicting inherited provider settings; resume from a clean native environment')
     env = {}
     if m['runtime'] == 'claude':
         argv = ['claude', '--resume', m['native_id']]
+        if m.get('native', {}).get('isolated_profile'):
+            env['CLAUDE_CONFIG_DIR'] = m['store']
     elif m['runtime'] == 'codex':
         argv = ['codex', 'resume', m['native_id']]
         env['CODEX_HOME'] = m['store']
     else:
         return dict(handoff, reason='runtime not supported')
-    prefix = ' '.join(f'{k}={shlex.quote(v)}' for k, v in env.items())
-    command = f"cd {shlex.quote(cwd)} && {prefix + ' ' if prefix else ''}{shlex.join(argv)}"
-    return {'supported': True, 'runtime': m['runtime'], 'argv': argv, 'cwd': cwd, 'env': env, 'command': command}
+    unset_env = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR']
+    prefix = ['env', *[part for key in unset_env for part in ('-u', key)],
+              *[f'{k}={v}' for k, v in env.items()]]
+    command = f"cd {shlex.quote(cwd)} && {shlex.join(prefix + argv)}"
+    return {'supported': True, 'runtime': m['runtime'], 'argv': argv, 'cwd': cwd,
+            'env': env, 'unset_env': unset_env, 'command': command}
+
+
+def resume_environment(plan):
+    env = {k: v for k, v in os.environ.items() if k not in plan['unset_env']}
+    env.update(plan['env'])
+    return env
 
 
 def load(store, sid):
@@ -110,6 +124,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('scan'); s.add_argument('--limit', type=int, default=500); s.add_argument('--home')
     s.add_argument('--no-openclaw', action='store_true')
+    s.add_argument('--environments-root', type=Path, help='prepared local OpenRig account environments')
     s = sub.add_parser('list'); s.add_argument('--json', action='store_true'); s.add_argument('--runtime')
     s.add_argument('--limit', type=int, default=20, help='maximum results (default 20; 0 means all)')
     s.add_argument('--search', help='case-insensitive title, native ID or cwd substring')
@@ -118,13 +133,33 @@ def main(argv=None):
     s = sub.add_parser('handoff'); s.add_argument('id'); s.add_argument('--import', dest='source', metavar='FILE|-')
     s.add_argument('--expect-revision', type=int)
     s = sub.add_parser('resume'); s.add_argument('id'); s.add_argument('--execute', action='store_true')
+    s = sub.add_parser('conversation', help='create and inspect durable cross-runtime associations')
+    cs = s.add_subparsers(dest='conversation_command', required=True)
+    s = cs.add_parser('create'); s.add_argument('--agent', required=True, choices=['morty', 'iztac', 'neo'])
+    s.add_argument('--title', required=True); s.add_argument('--project'); s.add_argument('--workspace')
+    s.add_argument('--resource'); s.add_argument('--formation', action='store_true'); s.add_argument('--repos', type=Path)
+    cs.add_parser('list')
+    s = cs.add_parser('show'); s.add_argument('id')
+    s = cs.add_parser('bind'); s.add_argument('id'); s.add_argument('native_id')
+    s.add_argument('--expect-revision', type=int, required=True)
     a = p.parse_args(argv)
     if a.cmd in ('list', 'scan') and a.limit < (1 if a.cmd == 'scan' else 0):
         p.error('--limit must be positive for scan, or nonnegative for list')
     store = Store(a.state_root)
     try:
-        if a.cmd == 'scan':
-            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources()), a.limit), indent=2, sort_keys=True))
+        if a.cmd == 'conversation':
+            from . import conversations
+            if a.conversation_command == 'create':
+                result = conversations.create(store, a.agent, a.title, a.project, a.workspace, a.resource, a.formation, a.repos)
+            elif a.conversation_command == 'list':
+                result = {'conversations': conversations.list_conversations(store)}
+            elif a.conversation_command == 'show':
+                result = conversations.show(store, a.id)
+            else:
+                result = conversations.bind(store, a.id, a.native_id, a.expect_revision)
+            print(json.dumps(result, indent=2, sort_keys=True))
+        elif a.cmd == 'scan':
+            print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources(), a.environments_root), a.limit), indent=2, sort_keys=True))
         elif a.cmd == 'list':
             items = [m for m in store.all() if not a.runtime or m['runtime'] == a.runtime]
             if a.search:
@@ -177,11 +212,11 @@ def main(argv=None):
                 if not exe or not os.path.isdir(plan['cwd']):
                     print('native command or working directory unavailable', file=sys.stderr)
                     return 2
-                return subprocess.run([exe] + plan['argv'][1:], cwd=plan['cwd'], env=dict(os.environ, **plan['env'])).returncode
+                return subprocess.run([exe] + plan['argv'][1:], cwd=plan['cwd'], env=resume_environment(plan)).returncode
         return 0
     except RevisionConflict as exc:
         print(f'conflict: {exc}', file=sys.stderr)
         return 3
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, OSError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 1

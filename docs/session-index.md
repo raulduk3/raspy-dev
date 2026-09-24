@@ -8,6 +8,16 @@ may append its own metadata-only audit record; the default doctor makes no model
 
 ## ai-session
 
+The scanner also reads native Claude/Codex home locators from the non-secret
+`~/.config/dev-platform/accounts.json` registry. Shared/default homes are deduplicated;
+isolated homes retain separate native identities. Missing stores remain unavailable,
+not deleted. Discovery does not read credential files or verify the current account.
+Claude resume plans for isolated stores include the corresponding `CLAUDE_CONFIG_DIR`.
+Resume commands clear inherited `CODEX_HOME` and `CLAUDE_CONFIG_DIR` before applying
+the recorded native home. Conflicting provider credential/routing environment
+settings refuse resume; this prevents a terminal's unrelated login route from
+silently changing a recovered session. This does not verify current login identity.
+
 ```
 ai-session [--state-root DIR] scan [--limit N] [--home DIR] [--no-openclaw]
 ai-session list [--json] [--runtime claude|codex|openclaw|copilot] [--limit N] [--search TEXT]
@@ -111,3 +121,30 @@ Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `b
   values are never printed.
 
 It never installs, restarts, edits configuration or prints credentials or config contents.
+
+## Cross-runtime conversations
+
+`ai-session conversation` adds an explicit association above native sessions, in the same state root. Original transcripts are not moved or rewritten. Accounts do not define conversation identity.
+
+```sh
+ai-session conversation create --agent morty --title 'Personal planning'
+ai-session conversation create --agent iztac --title 'Implement account controls' --project owner/repo --workspace /path/to/checkout
+ai-session conversation create --agent iztac --title 'Explore a new project' --formation --workspace /path/to/formation
+ai-session conversation create --agent neo --title 'Host maintenance' --resource local-host
+ai-session conversation list
+ai-session conversation bind CONVERSATION_ID INDEXED_NATIVE_ID --expect-revision REVISION
+ai-session conversation show CONVERSATION_ID
+```
+
+Existing project names resolve to stable IDs through `~/.config/dev-platform/repos.conf`; `--repos FILE` selects another catalog configuration. The workspace must resolve to the same Git repository, including linked worktrees. Formation is an explicit temporary scope for a real directory before a catalog project exists. Morty cannot be project-bound; Neo needs an explicit system resource or project scope. No creation command launches a runtime.
+
+Each conversation has `conversations/ID/session.json`, `handoff.md`, and a reserved `native/pi/` folder. Native associations stay in existing index manifests and survive scans. Binding checks the expected native-record revision and refuses reassignment to another conversation. Project/formation bindings require a matching observed native workspace. This keeps associations evidence-based but means unavailable historical workspaces need a separate migration/rebinding procedure.
+
+These commands establish storage and association, not complete runtime lifecycle enforcement. The role launcher must still apply neutral/project cwd, resource isolation, native Pi session paths and account ownership. Formation-to-project promotion, explicit worker/successor relationships, relocated source identities and OpenRig execution bindings remain pending. A created conversation does not prove any of those behaviors.
+
+
+### Container account histories
+
+Pass `scan --environments-root ROOT` for the prepared four-account local OpenRig deployment. This scans native homes under `ROOT/ACCOUNT/home`, without reading credentials. It translates `/workspace` to that account's host workspace and `/home/node` to its persistent home. The original container cwd and Codex rollout locator remain in native metadata. An account-profile label is not verified login identity.
+
+Container records are OpenRig-owned and cannot resume through the standalone host CLI. Missing native stores remain unavailable; they are not deleted. Conversation associations and authored handoffs survive the same scan behavior as other native records. General source relocation, cross-container project identity, and exact host/seat/occupant adoption still require explicit integration evidence.

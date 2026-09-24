@@ -1,0 +1,10 @@
+{
+  "name": "dev-platform-agent-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pinned Pi runtime for portable personal and engineering agents",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1"
+  }
+}

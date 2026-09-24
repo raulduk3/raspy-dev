@@ -87,7 +87,7 @@ def _claude_header(path):
     return found
 
 
-def read_claude(claude_home):
+def read_claude(claude_home, map_path=None):
     if not (claude_home / 'projects').is_dir():
         raise FileNotFoundError('native store unavailable')
     seen = set()
@@ -102,6 +102,8 @@ def read_claude(claude_home):
                         path = index.parent / path
                 else:
                     path = index.parent / f"{e['sessionId']}.jsonl"
+                if map_path is not None and isinstance(e.get('fullPath'), str) and Path(e['fullPath']).is_absolute():
+                    path = map_path(path)
                 yield _rec(e['sessionId'], e.get('projectPath'), e.get('customTitle'), e.get('gitBranch'),
                            e.get('modified'), extra={'sidechain': bool(e.get('isSidechain')),
                            'index_path': str(index), 'transcript_path': str(path),
@@ -169,7 +171,7 @@ def read_vscode(root):
             yield _rec(native, folder, title, None, d.get('lastMessageDate') or d.get('creationDate'))
 
 
-def discover(home=None, openclaw=True, previous=None):
+def discover(home=None, openclaw=True, previous=None, environments_root=None):
     home = Path(home or Path.home())
     sources = []
     for path, owner, store in codex_homes(home):
@@ -178,11 +180,46 @@ def discover(home=None, openclaw=True, previous=None):
     if (home / '.claude/projects').is_dir():
         sources.append(Source('claude:default', 'claude', str(home / '.claude'), 'user',
                               lambda: read_claude(home / '.claude')))
+    # Read only the non-secret account registry, never authentication files. A
+    # configured profile is a history locator, not proof of the current login.
+    registry = home / '.config/dev-platform/accounts.json'
+    if registry.exists():
+        try:
+            from .accounts import load, IDS, runtime
+            bindings = load(registry)['bindings']
+            known = {(s.runtime, str(Path(s.store).resolve())) for s in sources}
+            for account, binding in sorted(bindings.items()):
+                if account not in IDS or account == 'zai':
+                    continue
+                if not isinstance(binding, dict) or not isinstance(binding.get('home'), str):
+                    raise ValueError('invalid native profile locator')
+                path = Path(binding['home'])
+                if not path.is_absolute():
+                    raise ValueError('native profile locator must be absolute')
+                native_runtime = runtime(account)
+                locator = (native_runtime, str(path.resolve()))
+                if locator in known:
+                    continue
+                known.add(locator)
+                reader = read_codex if native_runtime == 'codex' else read_claude
+                def read_profile(p=path, read=reader):
+                    for record in read(p):
+                        record['native']['isolated_profile'] = True
+                        yield record
+                sources.append(Source(f'{native_runtime}:account:{account}', native_runtime,
+                                      str(path), 'user', read_profile))
+        except (ValueError, TypeError, AttributeError, OSError):
+            def invalid_registry():
+                raise ValueError('account registry unavailable or malformed')
+            sources.append(Source('accounts:registry', 'registry', str(registry), 'user', invalid_registry))
     if openclaw and shutil.which('openclaw'):
         sources.append(Source('openclaw:all-agents', 'openclaw', 'openclaw', 'openclaw', read_openclaw))
     for root in vscode_roots(home):
         if root.is_dir():
             sources.append(Source(f'vscode:{root}', 'copilot', str(root), 'vscode', lambda r=root: read_vscode(r)))
+    if environments_root is not None:
+        from .environments import sources as environment_sources
+        sources.extend(environment_sources(Path(environments_root)))
     # A vanished previously indexed store is unavailable, not an empty successful scan.
     keys = {s.key for s in sources}
     for key, old in (previous or {}).items():

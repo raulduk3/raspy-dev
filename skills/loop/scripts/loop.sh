@@ -270,6 +270,15 @@ launch_worker() {  # issue worktree model branch title: start a new native conve
   local envf common v session_title description
   local selected_account="${LOOP_ACCOUNT_ID:-}"
   local -a worker_command
+  if [ -n "${LOOP_SEAT_RIG:-}" ]; then  # an interactive seat in the owner's running rig instead
+    # The loop's selected account is a Claude one; a Codex seat takes LOOP_SEAT_ACCOUNT or its native home.
+    local seat_account="${LOOP_SEAT_ACCOUNT:-}"
+    [ -n "$seat_account" ] || [ "${LOOP_SEAT_RUNTIME:-claude}" != claude ] || seat_account="$selected_account"
+    "${DEV_WORKSPACE:-$here/../../../bin/dev-workspace}" add-worker "${LOOP_SEAT_RUNTIME:-claude}" \
+      --rig "$LOOP_SEAT_RIG" --cwd "$wt" ${seat_account:+--account "$seat_account"} \
+      || { echo "#$i: no seat confirmed in $LOOP_SEAT_RIG; the worktree stays at $wt"; return 0; }
+    echo "#$i -> $branch (seat in $LOOP_SEAT_RIG)"; return 0
+  fi
   worker_command=(claude)
   if [ -n "$selected_account" ]; then
     worker_command=("$ACCOUNT_CLI" run --account "$selected_account" --)
@@ -465,6 +474,8 @@ PY
       if worker_running "$i"; then echo "  #$i: worker still running; wait for it or stop it first"; continue; fi
       wt="$(worker_wt_of "$i")"
       if [ -n "$wt" ] && [ -f "$wt/.worker-blocked.md" ]; then echo "  #$i: blocked, not folded:"; sed 's/^/    /' "$wt/.worker-blocked.md"; continue; fi
+      if [ -n "$wt" ] && grep -qsF 'OpenRig MANAGED BLOCK' "$wt/CLAUDE.md" "$wt/AGENTS.md"; then echo "  #$i: a seat is still attached to $wt; dev-workspace remove-worker --rig <rig> --cwd $wt first"; continue; fi
+      if git -C "$dir" diff "$day"..."$b" | grep -qE '^\+.*OpenRig MANAGED BLOCK|^\+\+\+ b/\.openrig/'; then echo "  #$i: $b commits OpenRig's managed context; fix the branch first"; continue; fi
       if [ -n "$wt" ] && [ -n "$(git -C "$wt" status --porcelain --untracked-files=no)" ]; then echo "  #$i: $wt has uncommitted changes; commit or discard them first"; continue; fi
       ahead="$(git -C "$dir" rev-list --count "$day".."$b")"
       [ "$ahead" -gt 0 ] || { echo "  #$i: $b has no commits beyond $day"; continue; }

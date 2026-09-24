@@ -100,6 +100,40 @@ class Doctor(unittest.TestCase):
         os.symlink(alternate / 'skills/loop', shared / 'loop')
         self.assertEqual(self.run_doctor('--platform-root', str(alternate))['skills']['.claude/skills']['state'], 'ok')
 
+    def test_skills_are_compared_with_the_activated_release_when_one_exists(self):
+        release = self.home / '.local/share/dev-platform/releases/r1'
+        (release / 'skills/new-only').mkdir(parents=True)
+        (release / 'skills/new-only/SKILL.md').write_text('# New\n')
+        (self.home / '.local/share/dev-platform/current').symlink_to(release)
+        (self.home / '.agents/skills').mkdir(parents=True)
+        missing = self.run_doctor()['skills']['.agents/skills']
+        self.assertIn('new-only', missing.get('canonical_missing', []) + missing.get('missing', []))
+        self.assertNotIn('loop', missing.get('canonical_missing', []))  # the checkout's list no longer applies
+
+    def test_links_into_an_older_release_are_stale_until_they_follow_the_activated_one(self):
+        releases = self.home / '.local/share/dev-platform/releases'
+        for release in ('old', 'new'):
+            (releases / release / 'skills/loop').mkdir(parents=True)
+            (releases / release / 'skills/loop/SKILL.md').write_text(f'# {release} loop\n')
+        current = self.home / '.local/share/dev-platform/current'
+        current.symlink_to(releases / 'new')
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel).mkdir(parents=True)
+            os.symlink(releases / 'old/skills/loop', self.home / rel / 'loop')
+        report = self.run_doctor()['skills']
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            self.assertEqual(report[rel]['state'], 'stale')
+            self.assertEqual(report[rel]['stale'], ['loop'])
+        checkout = self.platform / 'skills/loop'  # the development checkout, not a release
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel / 'loop').unlink()
+            os.symlink(checkout, self.home / rel / 'loop')
+        self.assertEqual(self.run_doctor()['skills']['.agents/skills']['stale'], ['loop'])
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel / 'loop').unlink()
+            os.symlink(current / 'skills/loop', self.home / rel / 'loop')
+        self.assertTrue(all(item['state'] == 'ok' for item in self.run_doctor()['skills'].values()))
+
     def test_shared_published_override_is_healthy_but_client_drift_is_not(self):
         published = self.home / 'workshop/loop'
         published.mkdir(parents=True)
@@ -192,3 +226,13 @@ class Doctor(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TmuxServerEnvironment(unittest.TestCase):
+    def test_only_provider_override_names_are_reported_from_a_listing(self):
+        from ai_ecosystem import doctor
+        listing = ('ANTHROPIC_BASE_URL=http://127.0.0.1:1\nOPENCLAW_SERVICE_KIND=gateway\n'
+                   'CLAUDE_CODE_USE_X=1\nPATH=/usr/bin\nTMPDIR=/tmp\n-CODEX_HOME\n')
+        self.assertEqual(doctor.tmux_provider_overrides(listing),
+                         ['ANTHROPIC_BASE_URL', 'OPENCLAW_SERVICE_KIND', 'CLAUDE_CODE_USE_X'])
+        self.assertEqual(doctor.tmux_provider_overrides(''), [])

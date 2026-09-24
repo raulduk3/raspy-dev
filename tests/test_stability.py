@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-import shutil
+import pty
 import signal
 import subprocess
 import sys
@@ -330,6 +330,67 @@ class LoopTests(Fixture):
         self.loop('close', '--as', 'main', expected=2)
         (out / 'folded-1.md').write_text('## What changed and why\n\nGenerated with Codex\n')
         self.loop('close', expected=1)
+
+
+    def in_owner_terminal(self, *args):
+        """Run a loop verb with a pseudo-terminal on stdin and stdout, as the owner's own shell."""
+        master, slave = pty.openpty()
+        process = subprocess.Popen(['bash', LOOP, *args], cwd=self.repo, env=self.env,
+                                   stdin=slave, stdout=slave, stderr=slave)
+        os.close(slave)
+        output = b''
+        while True:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output += chunk
+        process.wait(timeout=25)
+        os.close(master)
+        return output.decode()
+
+    def test_fold_refuses_an_attached_seat_and_committed_managed_context(self):
+        self.setup_remote(); self.loop('start')
+        day = (self.ctl() / 'day-branch').read_text().strip()
+        wt = self.repo / '.claude/worktrees/loop-1-example'
+        self.run_cmd('git', 'worktree', 'add', '-q', '-b', 'fix/example-1', wt, day)
+        (wt / 'source').write_text('changed\n')
+        (wt / 'CLAUDE.md').write_text('<!-- BEGIN OpenRig MANAGED BLOCK: role -->\nx\n<!-- END OpenRig MANAGED BLOCK: role -->\n')
+        self.run_cmd('git', 'commit', '-qam', 'fix: example', cwd=wt)
+        fold = lambda: self.in_owner_terminal('fold', 'test/repo', '1')
+        self.assertIn('seat is still attached', fold())
+        (wt / 'CLAUDE.md').unlink()
+        (wt / '.openrig').mkdir()
+        (wt / '.openrig/context-collector.cjs').write_text('collector\n')
+        self.run_cmd('git', 'add', '-f', '.openrig', cwd=wt)
+        self.run_cmd('git', 'commit', '-qm', 'fix: stray', cwd=wt)
+        self.assertIn("commits OpenRig's managed context", fold())
+        self.assertTrue(wt.exists())
+
+
+    def test_seat_rig_gives_a_resumed_issue_a_seat_instead_of_a_headless_worker(self):
+        self.setup_remote(); self.loop('start')
+        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        wt = self.repo / '.claude/worktrees/loop-1-example'
+        self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/example-1', wt)
+        (wt / '.worker-brief.md').write_text('Scope (only these path prefixes may change): source\n')
+        (self.fakebin / 'gh').write_text('#!/bin/sh\necho \'{"title":"Example","labels":[],"body":"Scope: source"}\'\n')
+        calls = self.base / 'dev-workspace.calls'
+        workspace = self.fakebin / 'dev-workspace'
+        workspace.write_text(f'#!/bin/sh\necho "$*" >> {calls}\n')
+        for path in (self.fakebin / 'gh', workspace):
+            path.chmod(0o755)
+        env = dict(self.env, DEV_WORKSPACE=str(workspace), LOOP_SEAT_RIG='development-iztac')
+        self.loop('resume', '1', env=env)
+        self.loop('resume', '1', env=dict(env, LOOP_SEAT_RUNTIME='codex'))
+        self.loop('resume', '1', env=dict(env, LOOP_SEAT_RUNTIME='codex', LOOP_SEAT_ACCOUNT='openai-gmail'))
+        recorded = calls.read_text().splitlines()
+        self.assertEqual(recorded[0], f'add-worker claude --rig development-iztac --cwd {wt}')
+        self.assertEqual(recorded[-2], f'add-worker codex --rig development-iztac --cwd {wt}')
+        self.assertEqual(recorded[-1], f'add-worker codex --rig development-iztac --cwd {wt} --account openai-gmail')
+        self.assertFalse((self.ctl() / day / 'workers/1.pid').exists())
 
 
 class GuardTests(Fixture):

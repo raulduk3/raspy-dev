@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 PLATFORM = Path(__file__).resolve().parents[1]
 CLI = PLATFORM / 'bin/ai-session'
@@ -28,6 +29,11 @@ def tree_digest(root):
 
 class SessionIndex(unittest.TestCase):
     def setUp(self):
+        # Resume plans refuse inherited provider overrides; the desktop apps set some.
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(('ANTHROPIC_', 'CLAUDE_CODE_USE_'))}
+        patcher = mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         tmp = tempfile.TemporaryDirectory(prefix='ai-session-')
         self.addCleanup(tmp.cleanup)
         self.base = Path(tmp.name)
@@ -89,6 +95,34 @@ class SessionIndex(unittest.TestCase):
                                      extra={'key': {'message': 'SECRET BODY'}})
         self.assertIsNone(rec['title'])
         self.assertIsNone(rec['native']['key'])
+
+    def test_isolated_account_histories_are_discovered_without_reading_auth(self):
+        codex = self.home / 'profiles/codex-apple'
+        claude = self.home / 'profiles/claude-apple'
+        self.codex_db(codex, [(UUID, str(self.work), 'isolated', 'main')])
+        project = claude / 'projects/example'
+        project.mkdir(parents=True)
+        self.claude_line(project, UUID, str(self.work))
+        # Invalid credential JSON deliberately proves these are not parsed.
+        (codex / 'auth.json').write_text('DO NOT READ CREDENTIALS')
+        registry = self.home / '.config/dev-platform/accounts.json'
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        registry.write_text(json.dumps({'version': 1, 'bindings': {
+            'openai-apple': {'home': str(codex)},
+            'anthropic-apple': {'home': str(claude)},
+            'openai-gmail': {'home': str(self.home / '.codex'), 'native_default': True}}}))
+        before = tree_digest(self.home)
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        self.assertEqual(before, tree_digest(self.home))
+        self.assertEqual(len(self.by('codex')), 3)
+        record = self.by('claude', store=str(claude))[0]
+        plan = json.loads(self.run_cli('resume', record['id']).stdout)
+        self.assertEqual(plan['env']['CLAUDE_CONFIG_DIR'], str(claude))
+        self.assertNotIn('DO NOT READ CREDENTIALS', self.run_cli('list', '--json').stdout)
+        claude.rename(self.home / 'moved-profile')
+        report = json.loads(self.run_cli('scan', '--home', str(self.home), '--no-openclaw').stdout)
+        self.assertEqual(report['claude:account:anthropic-apple']['state'], 'unavailable')
+        self.assertEqual(self.by('claude', store=str(claude))[0], record)
 
     def test_titles_and_handoffs_survive_rescan_and_revision_conflict_fails(self):
         self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
@@ -292,6 +326,7 @@ class SessionIndex(unittest.TestCase):
         plan = json.loads(self.run_cli('resume', user['id']).stdout)
         self.assertEqual(plan['argv'], ['codex', 'resume', UUID])
         self.assertEqual(plan['env']['CODEX_HOME'], str(self.home / '.codex'))
+        self.assertEqual(plan['unset_env'], ['CODEX_HOME', 'CLAUDE_CONFIG_DIR'])
         for m in self.by('codex', owner='openclaw') + self.by('copilot'):
             run = self.run_cli('resume', m['id'], '--execute', check=False)
             self.assertEqual(run.returncode, 2)
@@ -307,6 +342,28 @@ class SessionIndex(unittest.TestCase):
         self.assertIn("'\"'\"'", plan['command'])
         run = self.run_cli('resume', 'claude-' + '0' * 20, check=False)
         self.assertEqual(run.returncode, 1)
+
+    def test_resume_shell_clears_inherited_profile_and_rejects_provider_override(self):
+        self.run_cli('scan', '--home', str(self.home), '--no-openclaw')
+        sid = self.by('claude')[0]['id']
+        self.env.update(CLAUDE_CONFIG_DIR='/wrong/claude', CODEX_HOME='/wrong/codex')
+        plan = json.loads(self.run_cli('resume', sid).stdout)
+        bindir = self.base / 'probe-bin'
+        bindir.mkdir()
+        probe = bindir / 'claude'
+        probe.write_text(f'#!{sys.executable}\nimport os,json\n'
+                         'print(json.dumps({k:os.environ.get(k) for k in '
+                         '["CLAUDE_CONFIG_DIR","CODEX_HOME"]}))\n')
+        probe.chmod(0o755)
+        env = dict(self.env, PATH=str(bindir) + ':/usr/bin:/bin')
+        result = subprocess.run(['sh', '-c', plan['command']], env=env,
+                                text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(result.stdout), {'CLAUDE_CONFIG_DIR': None, 'CODEX_HOME': None})
+        self.env['OPENAI_API_KEY'] = 'PRIVATE-OVERRIDE'
+        refused = self.run_cli('resume', sid, check=False)
+        self.assertEqual(refused.returncode, 2)
+        self.assertFalse(json.loads(refused.stdout)['supported'])
+        self.assertNotIn('PRIVATE-OVERRIDE', refused.stdout + refused.stderr)
 
 
 if __name__ == '__main__':

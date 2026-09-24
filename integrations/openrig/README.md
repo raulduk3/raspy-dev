@@ -1,9 +1,14 @@
 # Native development workspace
 
-This integration uses **OpenRig 0.5.14**, unmodified, with Node **24.14.0** on
-Apple Silicon. It adds two alternative one-seat RigSpecs and a small native CLI
-launcher, not a web dashboard, queue, scheduler, or model proxy. Models and login
-remain the harness's choice. The existing loop remains execution authority.
+This integration uses **OpenRig 0.5.14**, with Node **24.14.0** on Apple Silicon.
+It adds two alternative one-seat RigSpecs and a small native CLI launcher, not a
+web dashboard, queue, scheduler, or model proxy. Models and login remain the
+harness's choice. The existing loop remains execution authority.
+
+As of the local per-seat account-binding work, the running install is **no
+longer stock upstream**: it carries a small local patch adding an optional
+per-seat `config_home` field. See "Provenance: the local `config_home` patch"
+below for exactly what changed, why, and how to roll it back.
 
 ## Upstream workflow and current integration boundary
 
@@ -18,14 +23,25 @@ Claude Desktop conversations. A catalog link, process inventory, message deliver
 successful MCP read does not mean OpenRig owns or can steer a Desktop session. Keep
 session ownership explicit and do not launch replacements for existing controllers.
 
-Account profiles are a separate capability from harness support. In installed OpenRig
-0.5.14 the provider-account registry accepts Codex profiles only; account-switch
-execution is not wired and reports `failed_safely` with
-`switch_execution_not_yet_wired`. That is **not** a restriction on Claude seats. The
-local registry was empty at inspection on 2026-09-24; no cross-account routing has been
-configured or verified. Continue to use native harness authentication and do not build
-a custom account router, copy credentials, or silently fall back to another account.
-Recheck these version-specific facts before relying on a later upstream release.
+Account profiles are a separate capability from harness support, and there are two
+distinct mechanisms; do not conflate them. OpenRig's own built-in provider-account
+registry, unrelated to this platform's account service, still accepts Codex
+profiles only, with account-switch execution unwired and reporting `failed_safely`
+with `switch_execution_not_yet_wired`; that registry was empty at inspection on
+2026-09-24 and remains unconfigured. That is **not** a restriction on Claude seats,
+and it is **not** the mechanism this platform uses.
+
+Separately, the local `config_home` patch (see Provenance below) lets a RigSpec pod
+member carry a per-seat `CODEX_HOME`/`CLAUDE_CONFIG_DIR` override, and
+`ai-environment plan --client openrig` (see `docs/host-account-service.md`) now
+returns a launch-allowed plan and a ready-to-embed member fragment once the
+selected dev-platform account binding is verified and eligible. `dev-workspace
+start <runtime> --account <account>` (below) consumes that plan directly. This is
+genuinely available on this host as of the patch install, but the end-to-end
+multi-account seat proof (two seats, two accounts, verified distinct native
+identity in each) has not yet been run; treat it as implemented and offline-tested,
+not yet accepted. Continue to use native harness authentication; do not build a
+second, competing account router or copy credentials between profiles.
 
 All control contexts may name their own sessions under the shared
 [session-naming contract](../../docs/session-naming.md). Native conversation titles,
@@ -101,16 +117,37 @@ dev-workspace plan codex --cwd /absolute/path/to/a/worktree
 dev-workspace start codex --cwd /absolute/path/to/a/worktree
 # Alternative harness:
 dev-workspace start claude --cwd /absolute/path/to/a/worktree
+# Pin a specific native account for this seat:
+dev-workspace start codex --cwd /absolute/path/to/a/worktree --account openai-apple
 ```
 
 The launcher previews with native `rig up --plan` before launch. It preserves
 upstream permission prompts rather than passing `--yes`. The `start` verb starts
 only the named control seat; worker dispatch still requires the owner's request.
-An existing `development-codex` or `development-claude` rig is reused with
-`--existing`, never cloned. Reuse preserves the persisted session's original
-working directory; `--cwd` applies to a new rig only. For another task, use the
-shared task/worktree workflow rather than silently repurposing a live session.
-Archived or duplicate rigs require explicit resolution.
+Without `--account`, an existing `development-codex` or `development-claude` rig
+is reused with `--existing`, never cloned. With `--account`, the rig name is
+`development-<runtime>-<account>` (e.g. `development-codex-openai-apple`), so two
+accounts on the same runtime never collide on one rig; that name is looked up and
+reused the same way. Reuse preserves the persisted session's original working
+directory; `--cwd` applies to a new rig only. For another task, use the shared
+task/worktree workflow rather than silently repurposing a live session. Archived
+or duplicate rigs require explicit resolution.
+
+`--account` resolves the named account through `ai-environment plan --client
+openrig` first (see `docs/host-account-service.md`), and refuses immediately, in
+the service's own words, if that plan is not launch-allowed — before touching rig
+inventory or writing anything. On an allowed plan it renders that per-account
+RigSpec from the plan's `member` fragment into
+`~/.local/state/dev-platform/openrig/<rig-name>.yaml` (a state directory, not a
+product repository; never committed) and passes that generated spec to `rig up`
+in place of the shared `codex.yaml`/`claude.yaml`. Reusing an existing per-account
+rig still re-resolves the account plan first, as identity revalidation, not
+reselection.
+
+`dev-workspace start iztac --cwd <engagement folder>` starts the control rig from
+`iztac.yaml`: a control seat, a Codex overseer and an empty `workers` pod. Worker seats
+join and leave it one loop worktree at a time with `add-worker` and `remove-worker`;
+see `docs/rig-working-branches.md`.
 
 The launcher removes inherited `CODEX_HOME` and `CODEX_THREAD_ID` from its child
 environment so standalone Codex uses its native personal store. It does not
@@ -155,6 +192,14 @@ RigSpecs with the installed native `rig up ... --plan` as a separate integration
 check. Offline launcher tests do not establish live steering, authentication, or
 end-to-end loop correctness. No automatic installation or daemon upgrade occurs.
 
+`tests/test_openrig_profile.py` covers the `--account` path the same way, plus
+`host_plan`'s `openrig` branch directly: native-default vs. isolated
+`config_home`, the member fragment shape, and refusal on an unverified/exhausted/
+unenrolled account. Its generated per-account specs were separately checked with
+the real, installed `rig spec validate` (pure offline schema validation — no
+daemon call, no seat, nothing running) and passed for both a `config_home` and a
+native-default variant.
+
 Both native plans passed on 2026-09-24 with the pinned CLI, with the expected
 `permission_policy absent; launch_posture=floor` warning. No agent was started by
 that check. The pinned parser requires `uses.plugins`, not the obsolete
@@ -164,3 +209,54 @@ Upstream contracts: [RigSpec](https://github.com/mvschwarz/openrig/blob/main/doc
 [AgentSpec](https://github.com/mvschwarz/openrig/blob/main/docs/reference/agent-spec.md),
 [project workspace](https://github.com/mvschwarz/openrig/blob/main/docs/reference/project-workspace.md).
 Revalidate against the installed CLI before changing the pinned version.
+
+## Provenance: the local `config_home` patch
+
+Current installed build: `0.5.14 (113182b7)`, three commits on `feat/native-account-profiles`:
+`60f98ffb` per-seat `config_home`, `acaac553` epoch-seconds `resets_at` in the status-line
+collector, and `113182b7` herdr views that open inside a workspace labeled with the rig's
+name when one exists. The previous build is parked as `app-acaac553`; rollback is the same
+directory swap described below.
+
+The install under `~/.local/share/dev-platform/openrig-runtime/app` is a locally
+patched build, not stock upstream `0.5.14`:
+
+- Upstream base: tag `v0.5.14` at commit `cc75efdd17fb967bde7cff6c5805791986af78d8`.
+- Local checkout: branch `feat/native-account-profiles`, based on upstream head
+  `c8fca9d5`, with patch commit `60f98ffbe80243572839d4596b5a7d9632c7b122`.
+- Build stamp: `0.5.14 (60f98ffb)`, built `2026-09-24T11:03:15Z`, reported
+  `dirty=false`.
+- The patch adds an optional per-seat `config_home` RigSpec member field,
+  injected as `CODEX_HOME` (runtime `codex`) or `CLAUDE_CONFIG_DIR` (runtime
+  `claude-code`), threaded through seat launch, successor launch, restore and
+  handover. It is used by the Codex adapter's trust and activity hooks and by
+  the Claude adapter's trust, onboarding and resume-token capture, plus Claude
+  transcript lookup across seat-pinned homes. It ships with migration `085`.
+- A full daemon test-suite run reportedly shows 3 failing suites and 14 failing
+  tests, which reproduce identically on untouched stock `v0.5.14` and are
+  therefore pre-existing, not regressions introduced by this patch.
+- Rollback: swap the `app` and `app-stock-cc75efdd` directories under
+  `~/.local/share/dev-platform/openrig-runtime`; the stock build is kept
+  parked there for exactly this.
+- Hard operational requirement: the daemon must be started with the pinned
+  Node v24.14.0 directory first on `PATH`. Its native SQLite binding is built
+  for that ABI; starting it under the system Node (v26 on this host) fails
+  with `ERR_DLOPEN_FAILED`.
+- Intent is to contribute this upstream. This fork is a staging state, not the
+  destination — do not treat it as a permanent local fork to build further
+  patches on top of without revisiting that plan.
+
+What this session independently confirmed against the live daemon before
+relying on any of the above: the build stamp (`rig --version` → `0.5.14
+(60f98ffb)`); the daemon running on port 7433 (matching the reported pid); the
+parked `app-stock-cc75efdd` directory existing beside `app`; one running rig
+(`development-codex`, matching the "do not disturb" seat); the `nodes.config_home`
+column existing in `~/.openrig/openrig.sqlite`; and the `schema_migrations` table
+listing `085_node_config_home.sql` applied at `2026-09-24 11:15:55`, immediately
+after the reported build time. The exact upstream/branch commit hashes and the
+"3 failing suites / 14 failing tests" characterization were not independently
+re-verified in this session (no separate git checkout of the OpenRig source was
+available here to check commit ancestry, and the full daemon suite was not
+re-run) — they are recorded as reported. Do not treat this section as proof of
+a working multi-account system: the end-to-end seat proof (two seats, two
+accounts, verified distinct identity in each) has not been run.

@@ -91,6 +91,7 @@ Scratch files and helper scripts belong in a project worktree or project artifac
 
 ## What is in this repository
 
+- `bin/ai`: the menu over everything here: projects, sessions, roles, teams and accounts. It hands off to the commands below and keeps no state of its own.
 - `bin/new-repo`: initializes a repository with the standard templates and branch rules.
 - `bin/ai-session`: indexes native AI sessions without copying message bodies.
 - `bin/ai-account`: verifies native account/profile selection and quota snapshots for new CLI launches.
@@ -101,6 +102,8 @@ Scratch files and helper scripts belong in a project worktree or project artifac
 - `skills/loop`: the local development loop: plan, dispatch bounded workers, collect, fold, close.
 - `skills/intake` and `skills/distill`: turn external notes into decision/spec work without copying private source material into repos.
 - `templates/`: the repository standard: AGENTS, CONTRIBUTING, pull request template, hygiene checks, specs, release/check workflows.
+- `docs/how-it-connects.md`: the map of the whole setup (accounts, homes, seats, rigs, OpenRig) for the person using it. Start there.
+- `docs/rig-working-branches.md`: the control rig, one worker seat per loop worktree and a Codex overseer.
 - `docs/accounts.md`, `docs/session-index.md`, `docs/session-naming.md`, `docs/development-workspace.md`, and `docs/skills-layer.md`: the contracts for the local ecosystem.
 - `ROLES.md`: which surface should do which kind of work.
 - `MODELS.md`: which model tier should do which kind of work.
