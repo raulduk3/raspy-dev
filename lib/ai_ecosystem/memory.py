@@ -23,7 +23,9 @@ ORIGINS = {
     'iztac': ('openclaw-hermes', Path.home() / '.openclaw/workspaces/hermes'),
     'neo': ('openclaw-neo', Path.home() / '.openclaw/workspace/neo'),
 }
-BASE64_LINE = re.compile(r'data:image/|[A-Za-z0-9+/=]{200,}')
+# Anchored on a real data URI: a merely long line (a hash chain, a URL) is content,
+# and silently dropping it from a snapshot would lose memory without a record.
+BASE64_LINE = re.compile(r'data:[a-z]+/[a-z0-9.+-]+;base64,|;base64,[A-Za-z0-9+/=]{100,}')
 
 
 def now():

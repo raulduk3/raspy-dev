@@ -188,13 +188,13 @@ def _format_windows(windows):
                           if isinstance(reset, (int, float)) and not isinstance(reset, bool) else 'unknown reset')
         except (ValueError, OverflowError, OSError):
             reset_text = 'unknown reset'
-        parts.append(f"{window['window']}{span} {window['used_percent']:.0f}% -> {reset_text}")
+        parts.append(f"{window['window']}{span} {window['used_percent']:.0f}% used -> {reset_text}")
     return '; '.join(parts)
 
 
 def table(view):
     columns = (('ACCOUNT', 20), ('CLIENT', 13), ('STATE', 14), ('FRESHNESS', 40))
-    header = ''.join(name.ljust(width) for name, width in columns) + 'WINDOWS'
+    header = ''.join(name.ljust(width) for name, width in columns) + 'WINDOWS (PERCENT USED)'
     lines = [header, '-' * len(header)]
     for row in view['accounts']:
         values = (row['account'], row['client'], row['state'], row['freshness'])

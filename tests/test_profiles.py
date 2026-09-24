@@ -59,8 +59,21 @@ class ProfilesBase(unittest.TestCase):
         write_registry(self.registry, {name: {'home': str(home), 'expected_email': 'x@example.invalid'}})
         return home
 
-    def apply_claude(self, name='anthropic-apple'):
-        return profiles.apply(name, self.registry, default_home_root=self.default_claude_home)
+    def install_root(self, with_collector):
+        """A fake platform install. The status line is only registered when the
+        collector is really installed there, so tests must say which case they mean."""
+        root = self.root / 'install'
+        (root / 'integrations' / 'claude').mkdir(parents=True, exist_ok=True)
+        collector = root / 'integrations' / 'claude' / 'usage-collector.py'
+        if with_collector:
+            collector.write_text('#!/usr/bin/env python3\n')
+        elif collector.exists():
+            collector.unlink()
+        return root
+
+    def apply_claude(self, name='anthropic-apple', with_collector=True):
+        return profiles.apply(name, self.registry, default_home_root=self.default_claude_home,
+                              install_root=str(self.install_root(with_collector)))
 
     def plan_claude(self, name='anthropic-apple'):
         return profiles.plan(name, self.registry, default_home_root=self.default_claude_home)
@@ -91,7 +104,7 @@ class BareClaudeHome(ProfilesBase):
         self.assertIn('$HOME/Dev/dev-platform/hooks/stop-check.sh', commands)
         self.assertEqual(settings['statusLine'], {
             'type': 'command',
-            'command': 'python3 $HOME/Dev/dev-platform/integrations/claude/usage-collector.py '
+            'command': f'python3 {self.root}/install/integrations/claude/usage-collector.py '
                        '--account anthropic-apple',
         })
         self.assertIn('Fixture global Claude instructions', claude_md.read_text())
@@ -128,6 +141,27 @@ class BareClaudeHome(ProfilesBase):
         # Must not raise: the platform's own account-selection safety scan must
         # accept the file this module writes.
         accounts.configuration_check('anthropic-apple', home, self.root)
+
+
+class StatusLineWithoutCollector(ProfilesBase):
+    def test_no_status_line_is_written_when_the_collector_is_not_installed(self):
+        home = self.claude_home()
+        result = self.apply_claude(with_collector=False)
+        settings = json.loads((home / 'settings.json').read_text())
+        # A command pointing at a missing file would fail on every status render.
+        self.assertNotIn('statusLine', settings)
+        self.assertIn('is not installed yet', result['actions'][0].get('note', ''))
+        # The guard hooks still land: they are the reason this home can be trusted.
+        self.assertIn('PreToolUse', settings['hooks'])
+
+    def test_a_dangling_status_line_from_an_earlier_run_is_withdrawn(self):
+        home = self.claude_home()
+        self.apply_claude(with_collector=True)
+        self.assertIn('statusLine', json.loads((home / 'settings.json').read_text()))
+        self.apply_claude(with_collector=False)
+        settings = json.loads((home / 'settings.json').read_text())
+        self.assertNotIn('statusLine', settings)
+        self.assertIn('PreToolUse', settings['hooks'])
 
 
 class ExistingUserSettings(ProfilesBase):

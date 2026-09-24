@@ -221,6 +221,7 @@ def _provision_claude_settings(home, account_id, repo_root, install_root, dry_ru
         raise ValueError('authoritative source missing: ' + str(hooks_path))
     hooks_fragment = json.loads(hooks_path.read_text())['hooks']
     command = 'python3 ' + install_root + '/integrations/claude/usage-collector.py --account ' + account_id
+    collector = _resolve_install_root(install_root) / 'integrations' / 'claude' / 'usage-collector.py'
     note = {}
 
     def merge(existing):
@@ -229,15 +230,25 @@ def _provision_claude_settings(home, account_id, repo_root, install_root, dry_ru
         for event, entries in hooks_fragment.items():
             hooks[event] = _merge_hook_entries(hooks.get(event) or [], entries)
         merged['hooks'] = hooks
-        note['status_line'] = _ensure_status_line(merged, command)
+        # A status line pointing at a file that is not installed spawns a failing
+        # process on every render. Register it only once the collector is really
+        # there, and withdraw one an earlier run left dangling.
+        if collector.is_file():
+            note['status_line'] = _ensure_status_line(merged, command)
+        else:
+            current = merged.get('statusLine')
+            if isinstance(current, dict) and 'usage-collector.py' in str(current.get('command', '')):
+                merged.pop('statusLine')
+                note['status_line'] = 'removed: collector not installed'
+            else:
+                note['status_line'] = 'skipped: collector not installed'
         return merged
 
     result = _apply_json_file(dest, merge, dry_run)
     result['status_line'] = note.get('status_line')
-    collector = _resolve_install_root(install_root) / 'integrations' / 'claude' / 'usage-collector.py'
     if not collector.is_file():
-        result['note'] = ('registered status line command for ' + str(collector) +
-                           '; that file does not exist yet (owned by a concurrent task)')
+        result['note'] = ('no status line: ' + str(collector) + ' is not installed yet, so usage '
+                          'capture stays off for this account. Rerun once the platform release lands.')
     return result
 
 
