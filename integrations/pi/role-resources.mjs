@@ -18,8 +18,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
   }
   if (memoryState !== undefined && !path.isAbsolute(memoryState)) throw new Error('Memory state root must be absolute');
   if (journalRoot !== undefined && !path.isAbsolute(journalRoot)) throw new Error('Journal root must be absolute');
-  // The journal is Ricky's own record; only the personal role reaches it.
-  const journal = agent === 'morty' ? journalRoot : undefined;
+  // Every role reads the journal; what each may WRITE is decided inside the tool.
   // Personal/system sessions execute in their neutral conversation workspace.
   // Invocation cwd never participates in resource selection.
   let cwd;
@@ -52,7 +51,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     additionalExtensionPaths:[path.join(platformRoot,'integrations/pi/perplexity.ts')],
     extensionFactories:[...(historyArchive ? [historyExtension({archive:historyArchive,agent})] : []),
       ...(memoryState ? [memoryExtension({agent, state:memoryState})] : []),
-      ...(journal ? [journalExtension({root:journal})] : []), ...extensionFactories],
+      ...(journalRoot ? [journalExtension({root:journalRoot, agent})] : []), ...extensionFactories],
     noContextFiles:!project,
     additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
     agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(memory?[memory]:[]),...(project?base.agentsFiles:[])]}),

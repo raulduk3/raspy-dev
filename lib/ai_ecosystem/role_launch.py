@@ -117,8 +117,8 @@ def plan(conversation_id, *, state_root=None, registry=None, account=None, model
     # is exactly the complaint this exists to answer.
     memory_status = agent_memory.status(conversation['agent'], state)
     memory_index = state / conversation['agent'] / 'memory' / 'MEMORY.md'
-    # Personal scope reaches the journal; the other roles keep their own ledgers.
-    journal = journal_root() if conversation['agent'] == 'morty' else None
+    # Every role reaches the journal; the tool decides what each may write.
+    journal = journal_root()
     archive = None
     if history_archive:
         archive = Path(history_archive).expanduser()

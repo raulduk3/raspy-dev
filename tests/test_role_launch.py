@@ -108,7 +108,7 @@ class RoleLaunch(unittest.TestCase):
                                  account='openai-apple', profiles_root=self.profiles,
                                  agents_root=self.root / 'no-agents')
 
-    def test_journal_is_configured_for_the_personal_role_only(self):
+    def test_journal_is_configured_for_every_role(self):
         self.configure_profile()
         conf = self.root / 'journal.conf'
         vault = self.root / 'vault'
@@ -123,10 +123,10 @@ class RoleLaunch(unittest.TestCase):
         gone = self.root / 'gone.conf'
         gone.write_text(str(self.root / 'not-a-directory') + '\n')
         self.assertIsNone(role_launch.journal_root(gone))
-        # The engineering conversation never carries a journal root, configured or not.
+        # Every role carries the root; the tool decides what each of them may write.
         with mock.patch.object(role_launch, 'JOURNAL_CONF', conf):
             engineering, _ = self.plan()
-            self.assertIsNone(engineering['journal'])
+            self.assertEqual(engineering['journal'], str(vault))
             personal_id = conversations.create(self.store, 'morty', 'Personal fixture')['id']
             personal, env = role_launch.plan(personal_id, state_root=self.state, registry=self.registry,
                                              account='openai-apple', profiles_root=self.profiles,

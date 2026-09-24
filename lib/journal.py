@@ -72,6 +72,11 @@ def records(root, include_history=False):
             yield row
 
 
+def journal_daily_roles():
+    from journal_daily import ROLES
+    return ROLES
+
+
 def iso_date(value):
     try:
         return date.fromisoformat(value).isoformat()
@@ -113,6 +118,21 @@ def main(argv=None):
     tasks.add_argument('--text', default='', help='Case-insensitive literal text substring')
     tasks.add_argument('--include-history', action='store_true', help='Also include archive, Morty records, templates and view files')
     tasks.add_argument('--json', action='store_true')
+    # One guided verb per kind of write. Narrowness is the point: `work` takes what a
+    # work entry is made of and nothing else, and always writes today's note.
+    work = sub.add_parser('work', help="Append one structured work entry to today's journal note")
+    work.add_argument('--role', required=True, choices=list(journal_daily_roles()))
+    work.add_argument('--summary', required=True)
+    work.add_argument('--project', help='Label the work so it can be reconciled to billable time')
+    work.add_argument('--minutes', type=nonnegative, help='Time spent, in minutes')
+    task = sub.add_parser('task', help="Create one task line in today's journal note")
+    task.add_argument('--text', required=True)
+    task.add_argument('--tag')
+    task.add_argument('--due', type=iso_date)
+    task.add_argument('--scheduled', type=iso_date)
+    task.add_argument('--priority', choices=('highest','high','medium','low'))
+    read = sub.add_parser('entries', help='Read the structured work entries of a day; never modifies notes')
+    read.add_argument('date', nargs='?', type=iso_date)
     for name in ('log-path','log-ensure','log-append','journal-ensure','journal-line'):
         command = sub.add_parser(name, help='Daily journal operation using existing date paths')
         command.add_argument('date', nargs='?', type=iso_date)
@@ -128,6 +148,19 @@ def main(argv=None):
         root = args.root.expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError('journal root must be a directory')
+        if args.command == 'entries':
+            from journal_daily import entries
+            print(json.dumps(entries(root, args.date), ensure_ascii=False, indent=2))
+            return 0
+        if args.command in ('work', 'task'):
+            from journal_daily import update, work_line, task_line
+            if args.command == 'work':
+                line = work_line(args.role, args.summary, args.project, args.minutes)
+            else:
+                line = task_line(args.text, args.tag, args.due, args.scheduled, args.priority)
+            result = update(root, args.command, None, None, None, line)
+            print(json.dumps(dict(result, line=line), ensure_ascii=False))
+            return 0
         if args.command != 'tasks':
             from journal_daily import update
             body = getattr(args, 'body', None)
