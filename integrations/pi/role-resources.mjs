@@ -26,13 +26,16 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
     fs.mkdirSync(cwd,{recursive:true,mode:0o700});
   }
   const identity = {path:identityFile,content:fs.readFileSync(identityFile,'utf8')};
+  // Startup guidance must be in context, not merely available for skill discovery.
+  const entryPath = path.join(platformRoot,'skills/session-entry/SKILL.md');
+  const entry = {path:entryPath,content:fs.readFileSync(entryPath,'utf8')};
   const settingsManager = SettingsManager.inMemory();
   const loader = new DefaultResourceLoader({
     cwd, agentDir, settingsManager,
     noExtensions:true, noSkills:true, noPromptTemplates:true, noThemes:true,
     noContextFiles:!project,
     additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
-    agentsFilesOverride:base=>({agentsFiles:[identity,...(project?base.agentsFiles:[])]}),
+    agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(project?base.agentsFiles:[])]}),
   });
   await loader.reload();
   const errors = loader.getSkills().diagnostics.filter(d=>d.type==='error');

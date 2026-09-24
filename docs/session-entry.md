@@ -14,8 +14,12 @@ takes precedence. Claude's effective user `CLAUDE.md` can import the skill with
 Account-isolated homes need their own instruction/skill projection, using paths
 valid inside that environment. Host installation does not prove container
 installation. Do not mount a credential-bearing host home just to share skills.
-Pi's explicit role loader is a separate integration; merely installing a global
-skill does not add it to that loader.
+Pi's explicit role loader includes the shared entry file in startup context for
+all three roles, before role identity and any bound project instructions. It does
+not depend on global skill discovery. Only Iztac receives the engineering skill;
+Morty and system-scoped Neo do not inherit repository context from the invoking
+directory. The resource-loader checks cover ten role/scope/invocation combinations;
+they do not establish authenticated model behavior or production launch.
 
 Native instructions guide the model; they are not a security boundary or proof
 that a model followed the skill. Acceptance requires a fresh native session in
