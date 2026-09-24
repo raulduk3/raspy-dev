@@ -7,7 +7,8 @@ workers, or run a daemon. No default account is inferred and no fallback is auto
 
 ## Ordered workflow
 
-1. `ai-account monitor` shows the five stable IDs in order: `anthropic-gmail`,
+1. `ai-account monitor --table` gives a compact native-terminal view; omit `--table`
+   for JSON integration output. It shows five stable IDs in order: `anthropic-gmail`,
    `anthropic-apple`, `openai-gmail`, `openai-apple`, `zai`. Unknown is not zero.
 2. `ai-account login-plan anthropic-apple` describes the isolated home and native
    command. Complete sign-in in a trusted local browser/terminal, never by passing
@@ -47,6 +48,13 @@ their values. Native config routing overrides are also rejected conservatively;
 review them rather than bypassing the check. Binding a native home does not certify
 all engineering configuration inside it or override the platform's execution policy.
 
+Directory-changing arguments (`--cd`, `-C`) and attached configuration/profile flags
+are refused: start the selector in the intended project so that directory is checked.
+The configuration scan is a conservative observed-conflict guard, **not a security
+sandbox or a complete evaluator** of native plugins, includes, system settings or
+credential helpers. Native client security and the existing platform guard remain
+responsible for those boundaries. New profile homes need their own native setup.
+
 ## Monitor and limitations
 
 `status ID` and `monitor` are timestamped, one-shot native observations. Claude uses
@@ -64,7 +72,7 @@ not actual spend, renewal status or the number of subscriptions actively billing
 | Claude Code / Codex through `ai-account run` | New process gets its bound native home; current processes unchanged |
 | Existing CLI launches bypassing this selector | Unchanged; cannot claim ecosystem-wide propagation |
 | OpenClaw | Native personal-account default is separate; `models accounts use` affects new sessions only and requires signed-in-person access. Connected accounts supports OpenAI API/ChatGPT but Anthropic API keys, not Claude subscription tokens |
-| OpenRig 0.5.14 | Both Claude and Codex seats exist; provider-switch execution is not wired, so direct rebinding is not claimed |
+| OpenRig 0.5.14 | Both Claude and Codex seats exist; provider-switch execution is not wired. Its strict member schema lacks per-seat environment fields and CODEX_HOME is daemon-wide, so safe per-seat profile injection is not claimed |
 | Claude Desktop / ChatGPT apps | Native app login and running sessions unchanged |
 | z.ai | Visible planned provider, blocked until plan/authentication/protected delivery are verified |
 

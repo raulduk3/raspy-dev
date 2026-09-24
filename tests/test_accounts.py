@@ -71,6 +71,17 @@ else:
         self.assertFalse(self.registry.exists())
         self.assertFalse(self.log.exists())
 
+    def test_native_terminal_table_preserves_unknown_and_reports_observation(self):
+        output = self.cli('monitor', '--table').stdout
+        self.assertLess(output.index('anthropic-gmail'), output.index('openai-gmail'))
+        self.assertIn('Billing/renewal: unknown', output)
+        self.assertIn('Observed:', output)
+        self.assertNotIn('0%', output)
+        self.bind('openai-gmail')
+        output = self.cli('status', 'openai-gmail', '--table').stdout
+        self.assertIn('25%', output)
+        self.assertIn('verified', output)
+
     def test_real_exec_preserves_literal_arguments_and_home_boundary(self):
         sentinel = self.native / 'auth.json'
         sentinel.write_text('unchanged credential sentinel')
@@ -143,6 +154,13 @@ else:
         self.assertNotEqual(self.cli('run', '--', '-p', 'hello', ok=False).returncode, 0)
         for args in [('--config', 'model_provider="other"'), ('--settings=x',), ('--oss',), ('auth', 'logout')]:
             self.assertNotEqual(self.cli('run', '--account', 'anthropic-gmail', '--', *args, ok=False).returncode, 0)
+
+    def test_codex_cannot_change_validated_directory_or_use_attached_profile(self):
+        self.bind('openai-gmail')
+        before = self.log.read_text()
+        for args in [('-C', '/elsewhere'), ('--cd=/elsewhere',), ('-C/elsewhere',), ('-pOTHER',)]:
+            self.assertNotEqual(self.cli('run', '--account', 'openai-gmail', '--', *args, ok=False).returncode, 0)
+        self.assertEqual(self.log.read_text(), before)
 
 
 if __name__ == '__main__':

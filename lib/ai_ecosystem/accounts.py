@@ -222,6 +222,26 @@ def plan(data, account):
             'desktop': 'not switched by this selector', 'fallback': 'none'}
 
 
+def table(output):
+    rows = output.get('accounts', [output])
+    lines = ['ACCOUNT             LOGIN       PLAN       USED / RESET (UTC)', '-' * 82]
+    for row in rows:
+        windows = [window for limit in row.get('quota') or [] for window in limit.values()]
+        values = []
+        for window in windows:
+            reset = window.get('resetsAt')
+            try:
+                at = datetime.fromtimestamp(reset, timezone.utc).strftime('%m-%d %H:%M') if reset else 'unknown reset'
+            except (ValueError, OverflowError, OSError):
+                at = 'unknown reset'
+            values.append(f"{window.get('usedPercent', '?')}% / {at}")
+        plan_name = row.get('plan') or 'unknown'
+        lines.append(f"{row['id']:<19} {row['identity']:<11} {plan_name:<10} {'; '.join(values) or 'unknown'}")
+    lines.append('Observed: ' + output.get('observed_at', 'unknown'))
+    lines.append('Billing/renewal: unknown. Quota is not spend; unknown is not zero.')
+    return '\n'.join(lines)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--registry', type=Path, default=Path.home() / '.config/dev-platform/accounts.json')
@@ -229,7 +249,9 @@ def main(argv=None):
     for name in ('plan', 'select', 'status', 'login-plan'):
         p = commands.add_parser(name)
         p.add_argument('account', choices=IDS)
-    commands.add_parser('monitor')
+        if name == 'status':
+            p.add_argument('--table', action='store_true')
+    commands.add_parser('monitor').add_argument('--table', action='store_true')
     p = commands.add_parser('bind')
     p.add_argument('account', choices=IDS)
     p.add_argument('--home', required=True, type=Path)
@@ -288,11 +310,12 @@ def main(argv=None):
                 raise ValueError('choose a verified account explicitly; no fallback')
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
             blocked = ('-c', '--config', '--profile', '--settings', '--setting-sources', '--bare',
-                       '--oss', '--local-provider')
+                       '--oss', '--local-provider', '-C', '--cd')
             if runtime(account) == 'codex':
                 blocked += ('-p',)
             if any(a in blocked or any(a.startswith(b + '=') for b in blocked) or
-                   (a.startswith('-c') and a != '-c' and not a.startswith('--')) for a in arguments):
+                   any(a.startswith(b) and a != b for b in blocked if len(b) == 2)
+                   for a in arguments):
                 raise ValueError('configuration overrides are not accepted by an account-bound launch')
             if arguments and arguments[0] in ('login', 'logout', 'auth', 'app-server'):
                 raise ValueError('use native login preparation, not an agent run, for authentication')
@@ -302,7 +325,7 @@ def main(argv=None):
             home = home_for(data, account)
             os.execvpe(runtime(account), [runtime(account), *arguments], environment(account, home, data['bindings'][account].get('native_default', False)))
             return 0
-        print(json.dumps(output, indent=2))
+        print(table(output) if getattr(args, 'table', False) else json.dumps(output, indent=2))
         return 0
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         # Native stderr/stdout and exception contents may contain secrets. Never relay them.
