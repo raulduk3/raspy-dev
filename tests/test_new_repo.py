@@ -40,7 +40,7 @@ class NewRepo(unittest.TestCase):
         branch = subprocess.run(['git', '-C', str(game), 'branch', '--show-current'], capture_output=True, text=True)
         self.assertEqual(branch.stdout.strip(), 'develop')
         self.assertTrue((game / 'docs/tasks/README.md').is_file())
-        self.assertEqual((self.config / 'repos.conf').read_text(), f'someone/game\t{game}\tlocal\tdevelop\n')
+        self.assertEqual((self.config / 'repos.conf').read_text(), f'someone/game {game} local develop\n')
         self.assertEqual((self.config / 'personal.conf').read_text(), f'{game}\n')
         self.assertIn('registered', result.stdout)
 

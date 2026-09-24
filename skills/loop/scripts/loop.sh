@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # loop: the development loop as verbs. One local day branch per repository and day, a file
 # ledger on this machine, one pull request to the configured base when the day closes.
-# repos.conf: owner/repo <tab> checkout <tab> local|owner|bot [<tab> base].
+# repos.conf: owner/repo checkout local|owner|bot [base], separated by spaces or tabs.
 # local, the default posture: tasks are files in docs/tasks/ on the base branch, the day starts
 # from the local base, and close --merge merges it back locally. GitHub is never called.
 # owner|bot: tasks are GitHub issues and the day closes as one pull request (the identity

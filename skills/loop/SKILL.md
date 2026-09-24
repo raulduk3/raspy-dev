@@ -18,8 +18,8 @@ open day (`loop/<date>`); its worktree is `.claude/worktrees/day-<date>` in the 
 
 ## Setup, once per machine
 
-`~/.config/dev-platform/repos.conf`: one line per repository, `owner/repo <tab> checkout path
-<tab> local|owner|bot [base-branch]`. `local` is the default posture: see Local repositories below;
+`~/.config/dev-platform/repos.conf`: one line per repository, `owner/repo checkout-path
+local|owner|bot [base-branch]`, separated by spaces or tabs (paths cannot contain spaces). `local` is the default posture: see Local repositories below;
 `new-repo --register` writes the line. `owner` means the two GitHub writes the loop makes (`pr create` at close,
 `issue close` at finish) use the human's own `gh` login and require the owner’s authorization and the script’s supported execution surface;
 `bot` means the machine user's token from 1Password. `~/.config/dev-platform/brief.conf` sets

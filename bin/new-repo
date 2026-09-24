@@ -198,7 +198,7 @@ fi
 
 root="$(pwd -P)"
 mode=local; [ -z "$github" ] || mode=owner
-line="$(printf '%s\t%s\t%s\tdevelop' "${github:-$owner/$name}" "$root" "$mode")"
+line="$(printf '%s %s %s develop' "${github:-$owner/$name}" "$root" "$mode")"
 repos_conf="${DEV_PLATFORM_REPOS:-$HOME/.config/dev-platform/repos.conf}"
 personal_conf="${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}"
 if [ "$register" = 1 ]; then
