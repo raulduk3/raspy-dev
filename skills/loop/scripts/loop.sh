@@ -26,9 +26,9 @@
 #   <date>/workers/<issue>.{pid,log}
 #
 # Personal repositories are listed in ~/.config/dev-platform/personal.conf (the guard hook's
-# rule); every other repository is professional. In a personal repository workers run under the
-# guard hook alone and the assistant may run close --push; in a professional one workers run with
-# an explicit allow list and close refuses a body that names a tool or a model (the ghost check).
+# rule); every other repository is professional. Workers use an explicit allow list everywhere.
+# In a personal repository the assistant may run close --push; in a professional one close
+# refuses a body that names a tool or a model (the ghost check).
 #
 # Verbs. assistant = on the owner's word in that session; owner = the owner in a terminal
 # (refused without one); automation = the scheduled tick.
@@ -78,6 +78,26 @@ WORKER_MODEL="${LOOP_WORKER_MODEL:-sonnet}"
 today="$(TZ=America/Chicago date +%Y-%m-%d)"
 ctl="$state/${repo//\//__}"; mkdir -p "$ctl"
 GHX="$here/ghx"
+ACCOUNT_CLI="$here/../../../bin/ai-account"
+
+verify_loop_account() {
+  local result
+  if [ -z "${LOOP_ACCOUNT_ID:-}" ]; then
+    # Capture separately: a pipeline without pipefail masks a failed registry read.
+    # An unreadable selection must never fall through to an unbound legacy launch.
+    result="$("$ACCOUNT_CLI" selected)" || return 2
+    LOOP_ACCOUNT_ID="$(jq -r '.selected // empty' <<<"$result")" || return 2
+  fi
+  [ -n "${LOOP_ACCOUNT_ID:-}" ] || return 0
+  case "$LOOP_ACCOUNT_ID" in
+    anthropic-gmail|anthropic-apple) ;;
+    *) echo "loop: account selection requires a Claude subscription; this loop has no Codex or z.ai worker adapter" >&2; return 2 ;;
+  esac
+  result="$(cd "$(repo_dir)" && "$ACCOUNT_CLI" status "$LOOP_ACCOUNT_ID")" || return 2
+  jq -e '.identity == "verified" and .runtime == "claude"' >/dev/null <<<"$result" || {
+    echo "loop: selected account is not verified; no worker allocated or steer changed" >&2; return 2;
+  }
+}
 
 repo_dir() {
   local d; d="$(awk -v r="$repo" '$1==r {print $2}' "$CONF" 2>/dev/null | head -1)"
@@ -93,14 +113,19 @@ need_day() {
   echo "$d"
 }
 day_wt() { echo "$(repo_dir)/.claude/worktrees/day-${1#loop/}"; }
+repository_identity() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] && (cd "$common" && pwd -P)
+}
 is_personal() {  # 1 when the checkout is listed in personal.conf, as the guard hook reads it; else 0
   local d f="${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}" line entry
-  d="$(dirname "$(git -C "$(repo_dir)" rev-parse --path-format=absolute --git-common-dir)")"
+  d="$(repository_identity "$(repo_dir)")" || { echo 0; return 0; }
   if [ -f "$f" ]; then
     while IFS= read -r line; do
       case "$line" in ''|'#'*) continue ;; esac
-      entry="${line/#\~/$HOME}"
-      case "$d/" in "$entry"/*) echo 1; return 0 ;; esac
+      entry="$(repository_identity "${line/#\~/$HOME}")" || continue
+      [ "$d" != "$entry" ] || { echo 1; return 0; }
     done < "$f"
   fi
   echo 0
@@ -141,15 +166,8 @@ tier_model() {  # issue labels -> Claude Code model (MODELS.md tiers)
     *) echo "$WORKER_MODEL" ;;
   esac
 }
-running_workers() {  # "pid issue" for live workers: this ledger and the pre-ledger layout
-  local pf pid i
-  for pf in "$ctl"/*/workers/*.pid "$state"/*/worker-*.pid; do
-    [ -f "$pf" ] || continue
-    [ ! -f "${pf%.pid}.exit" ] || continue
-    pid="$(cat "$pf")"; i="$(basename "$pf")"; i="${i%.pid}"; i="${i#worker-}"
-    ps -p "$pid" >/dev/null 2>&1 && echo "$pid $i"
-  done
-  return 0
+running_workers() {  # "pid issue" only for verified supervisors owned by this repository
+  python3 "$here/worker-run.py" --running "$ctl" "$(repo_dir)"
 }
 worker_running() { running_workers | grep -qE " $1\$"; }
 live_worktrees() {  # cwd of every running claude process
@@ -195,12 +213,12 @@ section() {  # <file> <header text> -> the section body, without its header
   awk -v h="## $2" '$0==h {f=1; next} /^## / {f=0} f' "$1" | sed '/^Closes #[0-9]*$/d'
 }
 dispatch() {  # <issue>...
-  local dir base i j title labels scope slug kind branch wt model exclude f
+  local dir base i j title labels scope slug kind branch wt model exclude
   dir="$(repo_dir)"
   base="$(git -C "$dir" rev-parse --short=8 "$day")"
   # The worker's untracked files are excluded repository-wide (local only, never committed).
   exclude="$(git -C "$dir" rev-parse --path-format=absolute --git-path info/exclude)"; mkdir -p "$(dirname "$exclude")"
-  for f in .worker-brief.md .worker-pr.md .worker-blocked.md; do grep -qx "$f" "$exclude" 2>/dev/null || echo "$f" >> "$exclude"; done
+  grep -qxF '.worker-*' "$exclude" 2>/dev/null || echo '.worker-*' >> "$exclude"
   for i in "$@"; do
     [ "$(running_workers | wc -l | tr -d ' ')" -lt "$CAP" ] || { echo "loop: worker cap reached"; break; }
     j="$(gh issue view "$i" --repo "$repo" --json title,body,labels)"
@@ -243,13 +261,34 @@ this issue, and any lock digest that guards it.
 Never push, open a pull request, comment on GitHub, merge, mark ready, approve, deploy, restart,
 rebase or amend, or touch another worktree. The owner reviews this branch on this machine.
 EOF
-    launch_worker "$i" "$wt" "$model" "$branch"
+    launch_worker "$i" "$wt" "$model" "$branch" "$title"
   done
 }
 
-launch_worker() {  # issue worktree model branch: start one headless worker in an existing worktree
-  local i="$1" wt="$2" model="$3" branch="$4"
-  local envf common v
+launch_worker() {  # issue worktree model branch title: start a new native conversation
+  local i="$1" wt="$2" model="$3" branch="$4" title="$5"
+  local envf common v session_title description
+  local selected_account="${LOOP_ACCOUNT_ID:-}"
+  local -a worker_command
+  if [ -n "${LOOP_SEAT_RIG:-}" ]; then  # an interactive seat in the owner's running rig instead
+    # The loop's selected account is a Claude one; a Codex seat takes LOOP_SEAT_ACCOUNT or its native home.
+    local seat_account="${LOOP_SEAT_ACCOUNT:-}"
+    [ -n "$seat_account" ] || [ "${LOOP_SEAT_RUNTIME:-claude}" != claude ] || seat_account="$selected_account"
+    "${DEV_WORKSPACE:-$here/../../../bin/dev-workspace}" add-worker "${LOOP_SEAT_RUNTIME:-claude}" \
+      --rig "$LOOP_SEAT_RIG" --cwd "$wt" ${seat_account:+--account "$seat_account"} \
+      || { echo "#$i: no seat confirmed in $LOOP_SEAT_RIG; the worktree stays at $wt"; return 0; }
+    echo "#$i -> $branch (seat in $LOOP_SEAT_RIG)"; return 0
+  fi
+  worker_command=(claude)
+  if [ -n "$selected_account" ]; then
+    worker_command=("$ACCOUNT_CLI" run --account "$selected_account" --)
+    jq -cn --arg id "$selected_account" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{account_id:$id, runtime:"claude", attempted_at:$at, scope:"new worker attempt"}' >> "$out/workers/$i.account.jsonl"
+  fi
+  # Display metadata only: no native ID changes or historical session edits.
+  description="$(jq -nr --arg title "$title" '$title | gsub("[[:space:][:cntrl:]]+"; " ") | sub("^ +"; "") | sub("[ .]+$"; "") | .[0:60]')"
+  [ -n "$description" ] || description="Implement issue"
+  session_title="${branch%%/*}(repo): $description #$i"
   common="$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)"
   envf="${DEV_PLATFORM_ENV_DIR:-$HOME/.config/dev-platform/env.d}/$(basename "$(dirname "$common")").sh"
   rm -f "$out/workers/$i.exit"
@@ -262,8 +301,11 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
     done
     export DEV_PLATFORM_ENV_PASS
     export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${LOOP_BG_WAIT_CEILING_MS:-900000}"
-    nohup python3 "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
-      claude --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
+    # Detach the supervisor too: tool cleanup may terminate the launcher's process group.
+    # nohup only ignores SIGHUP; losing the supervisor leaves its detached child unbounded.
+    python3 - "$out/workers/$i.pid" "$out/workers/$i.log" \
+      "$here/worker-run.py" "$MAX_SECONDS" "$out/workers/$i.exit" -- \
+      "${worker_command[@]}" --name "$session_title" --model "$model" --max-turns "$MAX_TURNS" -p "$(cat .worker-brief.md)" --permission-mode acceptEdits \
       --allowedTools "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" \
         "Bash(git add *)" "Bash(git commit *)" "Bash(gh issue view *)" \
         "Bash(uv *)" "Bash(bin/check*)" "Bash(bin/spec-check*)" "Bash(python3 *)" "Bash(pytest *)" \
@@ -271,9 +313,23 @@ launch_worker() {  # issue worktree model branch: start one headless worker in a
         "Bash(pwd)" "Bash(which *)" "Bash(mkdir *)" "Bash(rm .worker-blocked.md)" \
         "Bash(bun install --frozen-lockfile)" "Bash(bun run check)" "Bash(bun run *)" "Bash(bun test *)" "Bash(bun install*)" \
         "Bash(~/.bun/bin/bun run *)" "Bash(~/.bun/bin/bun test *)" "Bash(~/.bun/bin/bun install*)" \
-        "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(rm .worker-brief.md)" \
+        "Bash($HOME/.bun/bin/bun *)" "Bash(npx vitest *)" "Bash(npm *)" "Bash(node *)" "Bash(npx *)" "Bash(rm .worker-brief.md)" \
         "Bash(bash $HOOKS/check-once.sh*)" \
-      < /dev/null > "$out/workers/$i.log" 2>&1 & echo $! > "$out/workers/$i.pid" )
+      <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+pid_path, log_path, *command = sys.argv[1:]
+with open(log_path, 'w') as log:
+    supervisor = subprocess.Popen([sys.executable, *command], stdin=subprocess.DEVNULL,
+                                  stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+target = Path(pid_path)
+tmp = target.with_suffix('.pid.tmp')
+tmp.write_text(str(supervisor.pid) + '\n')
+tmp.replace(target)
+PY
+  )
   echo "#$i -> $branch ($model) pid $(cat "$out/workers/$i.pid")"
 }
 
@@ -282,6 +338,8 @@ case "$verb" in
   go|tick|resume)
     mkdir "$ctl/dispatch-lock" 2>/dev/null || { echo "loop: another dispatch holds $ctl/dispatch-lock" >&2; exit 3; }
     trap 'rmdir "$ctl/dispatch-lock"' EXIT
+    # Validate ownership outside a pipeline: set -e must stop on ambiguous identity.
+    running_workers >/dev/null
     ;;
 esac
 
@@ -335,6 +393,7 @@ case "$verb" in
     ;;
   go)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     printf 'go%s\n' "${*:+ $*}" > "$ctl/steer"
     sense >/dev/null
     sel="$(select_from_plan "$@")"
@@ -347,6 +406,7 @@ case "$verb" in
     ;;
   resume)
     [ -n "$day" ] || need_day >/dev/null
+    verify_loop_account
     [ $# -gt 0 ] || { echo "loop: resume needs issue numbers" >&2; exit 2; }
     dir="$(repo_dir)"
     for i in "$@"; do
@@ -359,7 +419,8 @@ case "$verb" in
       [ -f "$wt/.worker-brief.md" ] || { echo "#$i: brief gone, worker finished; review or fold instead"; continue; }
       [ -f "$wt/.worker-blocked.md" ] && { echo "#$i: blocked, widen the scope first"; continue; }
       branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
-      j="$(gh issue view "$i" --repo "$repo" --json labels,body)"
+      j="$(gh issue view "$i" --repo "$repo" --json title,labels,body)"
+      title="$(jq -r '.title // ""' <<<"$j")"
       labels="$(jq -r '[.labels[].name]|join(",")' <<<"$j")"; model="$(tier_model "$labels")"
       # The owner may have widened Scope: in the issue body since dispatch; the brief carries the current line.
       scope="$(jq -r '(.body // "") | capture("(?m)^Scope: *(?<s>[^\n]+)")? .s // "unspecified"' <<<"$j")"
@@ -370,7 +431,7 @@ s=re.sub(r'^Scope \(only these path prefixes may change\): .*$', lambda m: 'Scop
 open(p,'w').write(s)
 PY
       [ -f "$out/workers/$i.log" ] && mv "$out/workers/$i.log" "$out/workers/$i.log.$(date +%H%M%S)"
-      launch_worker "$i" "$wt" "$model" "$branch"
+      launch_worker "$i" "$wt" "$model" "$branch" "$title"
     done
     ;;
   pause)
@@ -379,6 +440,7 @@ PY
   tick)
     [ "$(steer_word)" = go ] || { echo NO_REPLY; exit 0; }
     [ -n "$day" ] || { echo NO_REPLY; exit 0; }
+    verify_loop_account
     running="$(running_workers | wc -l | tr -d ' ')"
     cap=$((CAP - running)); [ "$cap" -gt 0 ] || { echo NO_REPLY; exit 0; }
     sense >/dev/null
@@ -412,6 +474,8 @@ PY
       if worker_running "$i"; then echo "  #$i: worker still running; wait for it or stop it first"; continue; fi
       wt="$(worker_wt_of "$i")"
       if [ -n "$wt" ] && [ -f "$wt/.worker-blocked.md" ]; then echo "  #$i: blocked, not folded:"; sed 's/^/    /' "$wt/.worker-blocked.md"; continue; fi
+      if [ -n "$wt" ] && grep -qsF 'OpenRig MANAGED BLOCK' "$wt/CLAUDE.md" "$wt/AGENTS.md"; then echo "  #$i: a seat is still attached to $wt; dev-workspace remove-worker --rig <rig> --cwd $wt first"; continue; fi
+      if git -C "$dir" diff "$day"..."$b" | grep -qE '^\+.*OpenRig MANAGED BLOCK|^\+\+\+ b/\.openrig/'; then echo "  #$i: $b commits OpenRig's managed context; fix the branch first"; continue; fi
       if [ -n "$wt" ] && [ -n "$(git -C "$wt" status --porcelain --untracked-files=no)" ]; then echo "  #$i: $wt has uncommitted changes; commit or discard them first"; continue; fi
       ahead="$(git -C "$dir" rev-list --count "$day".."$b")"
       [ "$ahead" -gt 0 ] || { echo "  #$i: $b has no commits beyond $day"; continue; }

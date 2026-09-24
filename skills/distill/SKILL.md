@@ -5,13 +5,13 @@ description: Turn a raw record (meeting transcript, message, email, notes) into 
 
 # distill
 
-Turn a raw record (meeting transcript, message, email, notes, stored in the owner's notes and never in a repository) into candidate requirement statements, each ranked against the repository's specification for congruency and for complexity, and append them as one dated batch to `docs/incoming.html`. People read, discuss and edit that file by hand. When a person decides a candidate is worth acting on, they copy its block and paste it into an `intake` session, and `intake` does what it already does. Nothing else reads the file: the loop, workers, hooks and the morning brief never reference it. The skill files no issue, edits no specification and opens nothing.
+Turn a raw record (meeting transcript, message, email, notes, stored in the owner's notes and never in a repository) into candidate requirement statements, each ranked against the repository's specification for congruency and for complexity, and append them as one dated batch to `docs/incoming.html`. People read, discuss and edit that file by hand. When a person decides a candidate is worth acting on, they copy its block and paste it into an `intake` session, and `intake` does what it already does. Nothing else reads the file: the loop, workers and hooks never reference it. The skill files no issue, edits no specification and opens nothing.
 
 ## Procedure
 
 1. **Source.** Any raw record. It stays in the owner's notes; it is never copied into a repository.
    The HTML receives derived statements and a source reference by date and type only, for example
-   `client call, 2026-09-17`. No raw quotes and no names of private individuals.
+   `stakeholder call, 2026-09-17`. No raw quotes and no names of private individuals.
 2. **Extract** candidate statements. Each is one sentence in `MUST`, `MUST NOT` or `SHOULD` form,
    with a kind: `bug`, `amendment`, `feature` or `question`.
 3. **Read the repository.** Read `docs/spec/SDD.md`, `docs/spec/TDD.md`, the other documents under

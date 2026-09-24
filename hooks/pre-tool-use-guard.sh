@@ -9,7 +9,8 @@
 #     commit --amend, filter-branch;
 #   - merges into develop or main and gh pr merge;
 #   - docker compose up/restart/down/stop, docker restart/stop/kill, systemctl restart/stop;
-#   - ssh as root, and any ssh command that restarts, deploys or stops something.
+#   - ssh as root, and any ssh command that restarts, deploys or stops something;
+#   - writing, chmodding or executing project scripts from ~/Desktop.
 # An operator who needs one of these runs it in a terminal, not through the agent. Set
 # DEV_PLATFORM_ALLOW_MUTATIONS=1 in the agent's environment to lift the ssh and docker rules for a
 # session the owner is driving; the push and merge rules stay.
@@ -22,16 +23,18 @@ command="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.s
 cwd="$(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cwd",""))' 2>/dev/null || true)"
 
 # The owner's own repositories; every other repository is professional.
+repository_identity() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] && (cd "$common" && pwd -P)
+}
 personal=0
 personal_conf="${DEV_PLATFORM_PERSONAL:-$HOME/.config/dev-platform/personal.conf}"
-if [ -n "$cwd" ] && [ -f "$personal_conf" ]; then
-  repo_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-  repo_root="${repo_root%/.git}"
+if [ -n "$cwd" ] && [ -f "$personal_conf" ] && repo_identity="$(repository_identity "$cwd")"; then
   while IFS= read -r line; do
     case "$line" in ''|'#'*) continue ;; esac
-    entry="${line/#\~/$HOME}"
-    case "$repo_root/" in "$entry"/*) personal=1 ;; esac
-    case "$cwd/" in "$entry"/*) personal=1 ;; esac
+    entry="$(repository_identity "${line/#\~/$HOME}")" || continue
+    if [ "$repo_identity" = "$entry" ]; then personal=1; break; fi
   done < "$personal_conf"
 fi
 
@@ -63,6 +66,19 @@ if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +push\b'; then
   if ! printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(-u |--set-upstream|origin +[a-zA-Z]+/|origin +HEAD|origin +refs/heads/[a-z]+/|refs/heads/[a-z]+/)'; then
     # A bare `git push` follows the branch's upstream, which may be develop or main.
     refuse "bare git push is refused; name the branch: git push -u origin <type/short-description>"
+  fi
+fi
+
+desktop_pattern=""
+if [ -n "${HOME:-}" ]; then
+  home_escaped="$(printf '%s/Desktop' "$HOME" | sed 's/[.[\\*^$()+?{}|]/\\&/g')"
+  desktop_pattern="(~|\\$HOME)/Desktop|$home_escaped"
+fi
+if [ -n "$desktop_pattern" ] && printf '%s' "$flat" | grep -Eq "$desktop_pattern"; then
+  desktop_write_re="(^|[;&|] *)((mkdir|touch|chmod|cp|mv|install|rsync)\b[^;&|]*($desktop_pattern)|(curl|wget)\b[^;&|]*(-o|--output-document=)[^;&|]*($desktop_pattern)|tee\b[^;&|]*($desktop_pattern)|[^;&|>]+>+[^;&|]*($desktop_pattern))"
+  desktop_exec_re="(^|[;&|] *)(bash|sh|zsh|python3?|node|bun|npm|npx|pwsh|osascript) +[^;&|]*($desktop_pattern)[^;&|]*\.(sh|py|js|ts|mjs|cjs|ps1|command|applescript|scpt)\b"
+  if printf '%s' "$flat" | grep -Eq "$desktop_write_re|$desktop_exec_re"; then
+    refuse "engineering scripts do not live on Desktop; use the project worktree or ledger/artifacts directory"
   fi
 fi
 

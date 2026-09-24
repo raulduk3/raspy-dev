@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# harvest — minimal Harvest CLI. Carried over from the OpenClaw workspace unchanged
+# except for these notes, a lazy credential read so `help` works without the
+# Keychain, and an honest User-Agent.
+# Creds source: macOS Keychain generic-password (service=harvest-api).
+# JSON in the password value: {"account_id":"...", "token":"..."}
+#
+# Usage:
+#   harvest hours [from] [to]       # summarize time entries
+#   harvest list  [from] [to]       # list entries with ids
+#   harvest create <date> <hours> <project_id> <task_id> "<notes>"
+#   harvest update <id> [--hours H] [--notes "..."]
+#   harvest delete <id>
+#   harvest projects                # list assigned projects + tasks
+#
+# Conventions:
+#   - Duration-only entries. We never send started_time/ended_time.
+
+set -euo pipefail
+
+API="https://api.harvestapp.com/api/v2"
+AUTH=()
+
+# Read the token only when a command really needs it, so `help` works anywhere and
+# the secret never enters the environment of a process that has no use for it.
+authenticate() {
+  local creds account token
+  creds="$(security find-generic-password -s harvest-api -w 2>/dev/null || true)"
+  if [[ -z "$creds" ]]; then
+    echo "harvest-api creds not found in Keychain (service=harvest-api)" >&2
+    exit 1
+  fi
+  account="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["account_id"])' <<<"$creds")"
+  token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<<"$creds")"
+  AUTH=(-H "Harvest-Account-ID: $account" -H "Authorization: Bearer $token" -H "User-Agent: dev-platform")
+}
+
+case "${1:-help}" in
+  hours)
+    authenticate
+    FROM="${2:-$(date +%Y-%m-01)}"
+    TO="${3:-$(date +%Y-%m-%d)}"
+    curl -sS "${AUTH[@]}" "$API/time_entries?from=$FROM&to=$TO&per_page=100" \
+      | python3 -c "
+import json,sys
+from collections import defaultdict
+d=json.load(sys.stdin)
+by_day=defaultdict(float)
+by_proj=defaultdict(float)
+total=0
+for e in d['time_entries']:
+    by_day[e['spent_date']]+=e['hours']
+    by_proj[e['project']['name']]+=e['hours']
+    total+=e['hours']
+for k in sorted(by_day): print(f'{k} {by_day[k]:>5.1f}h')
+print('---')
+for k,v in sorted(by_proj.items(), key=lambda x:-x[1]): print(f'{v:>5.1f}h {k}')
+print(f'TOTAL {total:.1f}h')
+"
+    ;;
+  list)
+    authenticate
+    FROM="${2:-$(date +%Y-%m-01)}"
+    TO="${3:-$(date +%Y-%m-%d)}"
+    curl -sS "${AUTH[@]}" "$API/time_entries?from=$FROM&to=$TO&per_page=100" \
+      | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for e in sorted(d['time_entries'], key=lambda x:x['spent_date']):
+    print(f\"{e['spent_date']} | id={e['id']:>11} | {e['hours']:>4}h | {e['project']['name']} / {e['task']['name']} | {(e.get('notes') or '').replace(chr(10),' ')[:120]}\")
+"
+    ;;
+  create)
+    authenticate
+    DATE="$2"; HOURS="$3"; PROJECT_ID="$4"; TASK_ID="$5"; NOTES="${6:-}"
+    PAYLOAD=$(python3 -c "
+import json,sys
+print(json.dumps({
+  'project_id': int(sys.argv[1]),
+  'task_id': int(sys.argv[2]),
+  'spent_date': sys.argv[3],
+  'hours': float(sys.argv[4]),
+  'notes': sys.argv[5],
+}))" "$PROJECT_ID" "$TASK_ID" "$DATE" "$HOURS" "$NOTES")
+    curl -sS -X POST "${AUTH[@]}" -H "Content-Type: application/json" -d "$PAYLOAD" "$API/time_entries" \
+      | python3 -c "import json,sys; e=json.load(sys.stdin); print(f\"created id={e['id']} {e['spent_date']} {e['hours']}h {e['project']['name']}/{e['task']['name']}\")"
+    ;;
+  update)
+    authenticate
+    ID="$2"; shift 2
+    PAYLOAD="{}"
+    HOURS=""
+    NOTES=""
+    while (( $# )); do
+      case "$1" in
+        --hours) HOURS="$2"; shift 2 ;;
+        --notes) NOTES="$2"; shift 2 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+      esac
+    done
+    PAYLOAD=$(python3 -c "
+import json,sys
+p={}
+if sys.argv[1]: p['hours']=float(sys.argv[1])
+if sys.argv[2]: p['notes']=sys.argv[2]
+print(json.dumps(p))" "$HOURS" "$NOTES")
+    curl -sS -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" -d "$PAYLOAD" "$API/time_entries/$ID" \
+      | python3 -c "import json,sys; e=json.load(sys.stdin); print(f\"updated id={e['id']} {e['hours']}h\")"
+    ;;
+  delete)
+    authenticate
+    ID="$2"
+    curl -sS -X DELETE "${AUTH[@]}" "$API/time_entries/$ID" && echo "deleted $ID"
+    ;;
+  projects)
+    authenticate
+    curl -sS "${AUTH[@]}" "$API/users/me/project_assignments?per_page=100" \
+      | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for p in d['project_assignments']:
+    if not p.get('is_active'): continue
+    print(f\"PROJ {p['project']['id']:>9} {p['project']['name']}\")
+    for t in p['task_assignments']:
+        if t.get('is_active'):
+            print(f'  TASK {t[\"task\"][\"id\"]:>8} {t[\"task\"][\"name\"]}')
+"
+    ;;
+  help|*)
+    sed -n '1,30p' "$0"
+    ;;
+esac
