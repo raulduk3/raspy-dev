@@ -15,7 +15,7 @@ from .store import MAX_HANDOFF, RevisionConflict, Store, check_id, session_id
 
 NATIVE_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 MERGED = ('cwd', 'title', 'branch', 'updated_at', 'format', 'native')
-KEPT = ('title_override', 'has_handoff')
+KEPT = ('title_override', 'has_handoff', 'conversation_id')
 
 
 def scan(store, sources, limit):
@@ -132,12 +132,32 @@ def main(argv=None):
     s = sub.add_parser('handoff'); s.add_argument('id'); s.add_argument('--import', dest='source', metavar='FILE|-')
     s.add_argument('--expect-revision', type=int)
     s = sub.add_parser('resume'); s.add_argument('id'); s.add_argument('--execute', action='store_true')
+    s = sub.add_parser('conversation', help='create and inspect durable cross-runtime associations')
+    cs = s.add_subparsers(dest='conversation_command', required=True)
+    s = cs.add_parser('create'); s.add_argument('--agent', required=True, choices=['morty', 'iztac', 'neo'])
+    s.add_argument('--title', required=True); s.add_argument('--project'); s.add_argument('--workspace')
+    s.add_argument('--resource'); s.add_argument('--formation', action='store_true'); s.add_argument('--repos', type=Path)
+    cs.add_parser('list')
+    s = cs.add_parser('show'); s.add_argument('id')
+    s = cs.add_parser('bind'); s.add_argument('id'); s.add_argument('native_id')
+    s.add_argument('--expect-revision', type=int, required=True)
     a = p.parse_args(argv)
     if a.cmd in ('list', 'scan') and a.limit < (1 if a.cmd == 'scan' else 0):
         p.error('--limit must be positive for scan, or nonnegative for list')
     store = Store(a.state_root)
     try:
-        if a.cmd == 'scan':
+        if a.cmd == 'conversation':
+            from . import conversations
+            if a.conversation_command == 'create':
+                result = conversations.create(store, a.agent, a.title, a.project, a.workspace, a.resource, a.formation, a.repos)
+            elif a.conversation_command == 'list':
+                result = {'conversations': conversations.list_conversations(store)}
+            elif a.conversation_command == 'show':
+                result = conversations.show(store, a.id)
+            else:
+                result = conversations.bind(store, a.id, a.native_id, a.expect_revision)
+            print(json.dumps(result, indent=2, sort_keys=True))
+        elif a.cmd == 'scan':
             print(json.dumps(scan(store, adapters.discover(a.home, not a.no_openclaw, store.sources()), a.limit), indent=2, sort_keys=True))
         elif a.cmd == 'list':
             items = [m for m in store.all() if not a.runtime or m['runtime'] == a.runtime]
@@ -196,6 +216,6 @@ def main(argv=None):
     except RevisionConflict as exc:
         print(f'conflict: {exc}', file=sys.stderr)
         return 3
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, OSError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 1

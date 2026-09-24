@@ -121,3 +121,23 @@ Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `b
   values are never printed.
 
 It never installs, restarts, edits configuration or prints credentials or config contents.
+
+## Cross-runtime conversations
+
+`ai-session conversation` adds an explicit association above native sessions, in the same state root. Original transcripts are not moved or rewritten. Accounts do not define conversation identity.
+
+```sh
+ai-session conversation create --agent morty --title 'Personal planning'
+ai-session conversation create --agent iztac --title 'Implement account controls' --project owner/repo --workspace /path/to/checkout
+ai-session conversation create --agent iztac --title 'Explore a new project' --formation --workspace /path/to/formation
+ai-session conversation create --agent neo --title 'Host maintenance' --resource local-host
+ai-session conversation list
+ai-session conversation bind CONVERSATION_ID INDEXED_NATIVE_ID --expect-revision REVISION
+ai-session conversation show CONVERSATION_ID
+```
+
+Existing project names resolve to stable IDs through `~/.config/dev-platform/repos.conf`; `--repos FILE` selects another catalog configuration. The workspace must resolve to the same Git repository, including linked worktrees. Formation is an explicit temporary scope for a real directory before a catalog project exists. Morty cannot be project-bound; Neo needs an explicit system resource or project scope. No creation command launches a runtime.
+
+Each conversation has `conversations/ID/session.json`, `handoff.md`, and a reserved `native/pi/` folder. Native associations stay in existing index manifests and survive scans. Binding checks the expected native-record revision and refuses reassignment to another conversation. Project/formation bindings require a matching observed native workspace. This keeps associations evidence-based but means unavailable historical workspaces need a separate migration/rebinding procedure.
+
+These commands establish storage and association, not complete runtime lifecycle enforcement. The role launcher must still apply neutral/project cwd, resource isolation, native Pi session paths and account ownership. Formation-to-project promotion, explicit worker/successor relationships, relocated source identities and OpenRig execution bindings remain pending. A created conversation does not prove any of those behaviors.
