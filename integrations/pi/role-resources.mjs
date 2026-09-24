@@ -33,11 +33,13 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
   const loader = new DefaultResourceLoader({
     cwd, agentDir, settingsManager,
     noExtensions:true, noSkills:true, noPromptTemplates:true, noThemes:true,
+    additionalExtensionPaths:[path.join(platformRoot,'integrations/pi/perplexity.ts')],
     noContextFiles:!project,
     additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
     agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(project?base.agentsFiles:[])]}),
   });
   await loader.reload();
+  if (loader.getExtensions().errors.length) throw new Error('Role extension loading failed');
   const errors = loader.getSkills().diagnostics.filter(d=>d.type==='error');
   if (errors.length) throw new Error('Role skill loading failed');
   return {cwd,loader,settingsManager,sessionDirectory:path.join(conversationHome,'native/pi')};

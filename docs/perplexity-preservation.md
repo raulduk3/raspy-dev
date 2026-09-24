@@ -13,3 +13,31 @@ Credentials should come from an explicitly selected protected source outside rep
 Acceptance: invoke search through the actual Pi tool, get useful results with source URLs, verify missing credentials and errors do not disclose secrets, preserve requested date/domain filters supported by the chosen interface, and demonstrate that OpenClaw is not required. No live API query, credential move, MCP installation or successful Pi search is claimed yet.
 
 Source: https://github.com/perplexityai/modelcontextprotocol (official server and supported clients); installed Pi documentation and extension API; local OpenClaw configuration keys inspected without printing their values.
+
+## Implemented candidate
+
+`integrations/pi/perplexity.ts` is one native Pi extension, explicitly loaded by
+the role resource loader for Morty, Iztac and Neo. It calls the fixed official
+Search API endpoint; it adds no dependencies or background process. Its sole
+credential source is `PERPLEXITY_API_KEY` supplied by the protected launch
+environment. It never reads OpenClaw configuration. No credential has been moved.
+
+The current alternative, [pi-mcp-adapter](https://pi.dev/packages/pi-mcp-adapter),
+supports remote MCP and protected token storage but introduces a general server
+lifecycle/configuration layer (catalog version 2.37.0 lists 15 dependencies).
+For this single tool, the direct API is the smaller maintained surface. Revisit
+the adapter when several needed services justify sharing that infrastructure.
+
+The tool preserves domain, recency, publication-date and update-date filters from
+the [official Search API](https://docs.perplexity.ai/api-reference/search-post).
+It requests bounded content, limits response bytes, rejects redirects, supports
+abort/timeout, returns only source fields and never returns raw provider errors.
+Missing credentials produce a clear local error. Search results remain untrusted
+reference material. A model account does not choose the search credential.
+
+`node integrations/pi/check-perplexity.mjs` exercises the actual registered Pi
+tool's missing-credential and pre-aborted paths without a live query or mocks.
+`check-role-context.mjs` verifies explicit loading across ten role/scope cases.
+These checks do not prove useful search results, live filter behavior, provider
+entitlement or successful secret redaction in a real provider response. Live
+acceptance and the credential migration remain required before cutover.
