@@ -19,7 +19,8 @@ import time
 IDS = ('anthropic-gmail', 'anthropic-apple', 'openai-gmail', 'openai-apple', 'zai')
 CONFLICTS = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN',
              'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_FEDERATION_RULE_ID', 'CLAUDE_CODE_OAUTH_TOKEN',
-             'CLAUDE_CODE_API_KEY_HELPER_TTL_MS', 'CLAUDE_CODE_SESSION_ACCESS_TOKEN')
+             'CLAUDE_CODE_API_KEY_HELPER_TTL_MS', 'CLAUDE_CODE_SESSION_ACCESS_TOKEN',
+             'CLAUDE_SECURESTORAGE_CONFIG_DIR')
 
 
 def now():
@@ -228,6 +229,35 @@ def plan(data, account):
             'desktop': 'not switched by this selector', 'fallback': 'none'}
 
 
+
+def prepare_login(account, root):
+    """Prepare an empty independent native profile; never import credentials."""
+    if account not in IDS or account == 'zai':
+        raise ValueError('unsupported isolated subscription profile')
+    root = Path(root).expanduser().absolute()
+    for ancestor in (root, *root.parents):
+        if ancestor.is_symlink():
+            raise ValueError('account profile root cannot contain symlinks')
+    home = root / account
+    if home.is_symlink():
+        raise ValueError('account profile cannot be a symlink')
+    home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(home, 0o700)
+    if runtime(account) == 'codex':
+        config = home / 'config.toml'
+        expected = 'cli_auth_credentials_store = "file"\n'
+        if config.is_symlink() or (config.exists() and config.read_text() != expected):
+            raise ValueError('existing profile configuration differs; inspect before preparing login')
+        if not config.exists():
+            fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as stream:
+                stream.write(expected)
+    return {'account': account, 'native_home': str(home),
+            'environment_key': 'CODEX_HOME' if runtime(account) == 'codex' else 'CLAUDE_CONFIG_DIR',
+            'native_command': ['codex','login'] if runtime(account) == 'codex' else ['claude','auth','login','--claudeai'],
+            'binding_changed': False, 'credentials_copied': False,
+            'notice': 'Preparation only. Native sign-in and identity verification are required before binding. Profile separation is not an OS sandbox.'}
+
 def table(output):
     rows = output.get('accounts', [output])
     lines = ['  ACCOUNT             LOGIN       PLAN       USED / WINDOW / RESET (UTC)', '-' * 92]
@@ -265,6 +295,9 @@ def main(argv=None):
             p.add_argument('--table', action='store_true')
     commands.add_parser('monitor').add_argument('--table', action='store_true')
     commands.add_parser('selected')
+    p = commands.add_parser('prepare-login')
+    p.add_argument('account', choices=IDS)
+    p.add_argument('--profiles-root', type=Path, default=Path.home() / '.local/share/dev-platform/accounts')
     p = commands.add_parser('bind')
     p.add_argument('account', choices=IDS)
     p.add_argument('--home', required=True, type=Path)
@@ -282,7 +315,9 @@ def main(argv=None):
             lock = locks.enter_context(os.fdopen(descriptor, 'w'))
             fcntl.flock(lock, fcntl.LOCK_EX)
         data = load(args.registry)
-        if args.command == 'selected':
+        if args.command == 'prepare-login':
+            output = prepare_login(args.account, args.profiles_root)
+        elif args.command == 'selected':
             output = {'selected': data.get('selected')}
         elif args.command == 'monitor':
             output = {'observed_at': now(), 'accounts': [status(data, a, True) for a in IDS],
@@ -297,6 +332,10 @@ def main(argv=None):
             native = probe(args.account, home, native_default=args.native_default)
             if not native.get('email') or native['email'].casefold() != args.expected_email.casefold():
                 raise ValueError('native login does not match the expected identity; no binding written')
+            if any(name != args.account and runtime(name) == runtime(args.account) and
+                   b.get('expected_email', '').casefold() == native['email'].casefold()
+                   for name, b in data['bindings'].items()):
+                raise ValueError('native identity already belongs to another account binding')
             data['bindings'][args.account] = {'home': str(home), 'expected_email': native['email'], 'verified_at': now(), 'native_default': args.native_default}
             save(args.registry, data)
             output = status(data, args.account)

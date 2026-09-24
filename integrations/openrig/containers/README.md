@@ -104,9 +104,9 @@ The shared entrypoint is `bin/ai-environment`, backed by
 `ai_ecosystem.accounts`; it does not create a token broker or another daemon.
 
 ```sh
-bin/ai-environment --root /absolute/private/account-environments status
-bin/ai-environment --root /absolute/private/account-environments choose codex
-bin/ai-environment --root /absolute/private/account-environments plan --client openrig --provider openai
+bin/ai-environment --execution-kind container --root /absolute/private/account-environments status
+bin/ai-environment --execution-kind container --root /absolute/private/account-environments choose codex
+bin/ai-environment --execution-kind container --root /absolute/private/account-environments plan --client openrig --provider openai
 ```
 
 Plans return JSON version 1, an explicit execution kind, readiness, capability
