@@ -178,6 +178,38 @@ def discover(home=None, openclaw=True, previous=None):
     if (home / '.claude/projects').is_dir():
         sources.append(Source('claude:default', 'claude', str(home / '.claude'), 'user',
                               lambda: read_claude(home / '.claude')))
+    # Read only the non-secret account registry, never authentication files. A
+    # configured profile is a history locator, not proof of the current login.
+    registry = home / '.config/dev-platform/accounts.json'
+    if registry.exists():
+        try:
+            from .accounts import load, IDS, runtime
+            bindings = load(registry)['bindings']
+            known = {(s.runtime, str(Path(s.store).resolve())) for s in sources}
+            for account, binding in sorted(bindings.items()):
+                if account not in IDS or account == 'zai':
+                    continue
+                if not isinstance(binding, dict) or not isinstance(binding.get('home'), str):
+                    raise ValueError('invalid native profile locator')
+                path = Path(binding['home'])
+                if not path.is_absolute():
+                    raise ValueError('native profile locator must be absolute')
+                native_runtime = runtime(account)
+                locator = (native_runtime, str(path.resolve()))
+                if locator in known:
+                    continue
+                known.add(locator)
+                reader = read_codex if native_runtime == 'codex' else read_claude
+                def read_profile(p=path, read=reader):
+                    for record in read(p):
+                        record['native']['isolated_profile'] = True
+                        yield record
+                sources.append(Source(f'{native_runtime}:account:{account}', native_runtime,
+                                      str(path), 'user', read_profile))
+        except (ValueError, TypeError, AttributeError, OSError):
+            def invalid_registry():
+                raise ValueError('account registry unavailable or malformed')
+            sources.append(Source('accounts:registry', 'registry', str(registry), 'user', invalid_registry))
     if openclaw and shutil.which('openclaw'):
         sources.append(Source('openclaw:all-agents', 'openclaw', 'openclaw', 'openclaw', read_openclaw))
     for root in vscode_roots(home):

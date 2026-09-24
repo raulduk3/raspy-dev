@@ -8,6 +8,16 @@ may append its own metadata-only audit record; the default doctor makes no model
 
 ## ai-session
 
+The scanner also reads native Claude/Codex home locators from the non-secret
+`~/.config/dev-platform/accounts.json` registry. Shared/default homes are deduplicated;
+isolated homes retain separate native identities. Missing stores remain unavailable,
+not deleted. Discovery does not read credential files or verify the current account.
+Claude resume plans for isolated stores include the corresponding `CLAUDE_CONFIG_DIR`.
+Resume commands clear inherited `CODEX_HOME` and `CLAUDE_CONFIG_DIR` before applying
+the recorded native home. Conflicting provider credential/routing environment
+settings refuse resume; this prevents a terminal's unrelated login route from
+silently changing a recovered session. This does not verify current login identity.
+
 ```
 ai-session [--state-root DIR] scan [--limit N] [--home DIR] [--no-openclaw]
 ai-session list [--json] [--runtime claude|codex|openclaw|copilot] [--limit N] [--search TEXT]

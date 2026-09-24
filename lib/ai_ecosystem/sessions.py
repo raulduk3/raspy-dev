@@ -84,17 +84,31 @@ def resume_plan(m):
     cwd = m.get('cwd')
     if not cwd or not os.path.isabs(cwd):
         return dict(handoff, reason='no absolute working directory recorded')
+    from .accounts import conflicts
+    if conflicts(os.environ):
+        return dict(handoff, reason='conflicting inherited provider settings; resume from a clean native environment')
     env = {}
     if m['runtime'] == 'claude':
         argv = ['claude', '--resume', m['native_id']]
+        if m.get('native', {}).get('isolated_profile'):
+            env['CLAUDE_CONFIG_DIR'] = m['store']
     elif m['runtime'] == 'codex':
         argv = ['codex', 'resume', m['native_id']]
         env['CODEX_HOME'] = m['store']
     else:
         return dict(handoff, reason='runtime not supported')
-    prefix = ' '.join(f'{k}={shlex.quote(v)}' for k, v in env.items())
-    command = f"cd {shlex.quote(cwd)} && {prefix + ' ' if prefix else ''}{shlex.join(argv)}"
-    return {'supported': True, 'runtime': m['runtime'], 'argv': argv, 'cwd': cwd, 'env': env, 'command': command}
+    unset_env = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR']
+    prefix = ['env', *[part for key in unset_env for part in ('-u', key)],
+              *[f'{k}={v}' for k, v in env.items()]]
+    command = f"cd {shlex.quote(cwd)} && {shlex.join(prefix + argv)}"
+    return {'supported': True, 'runtime': m['runtime'], 'argv': argv, 'cwd': cwd,
+            'env': env, 'unset_env': unset_env, 'command': command}
+
+
+def resume_environment(plan):
+    env = {k: v for k, v in os.environ.items() if k not in plan['unset_env']}
+    env.update(plan['env'])
+    return env
 
 
 def load(store, sid):
@@ -177,7 +191,7 @@ def main(argv=None):
                 if not exe or not os.path.isdir(plan['cwd']):
                     print('native command or working directory unavailable', file=sys.stderr)
                     return 2
-                return subprocess.run([exe] + plan['argv'][1:], cwd=plan['cwd'], env=dict(os.environ, **plan['env'])).returncode
+                return subprocess.run([exe] + plan['argv'][1:], cwd=plan['cwd'], env=resume_environment(plan)).returncode
         return 0
     except RevisionConflict as exc:
         print(f'conflict: {exc}', file=sys.stderr)
