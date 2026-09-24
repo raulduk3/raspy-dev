@@ -14,7 +14,7 @@ import sys
 
 COMMANDS = ('claude', 'codex', 'openclaw', 'code', 'gh', 'git', 'jq', 'python3', 'laya-decide')
 SKILL_DIRS = ('.claude/skills', '.codex/skills', '.agents/skills')
-LAYA_LABEL = 'com.raulduk3.laya'
+LAYA_LABEL = 'dev.raspy.laya'
 LAYA_PROBE = {
     'state': 'Read-only diagnostic: choose which small local documentation task to inspect first.',
     'options': {'read_summary': 'Read a short summary.', 'read_details': 'Read the detailed notes.'},

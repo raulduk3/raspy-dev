@@ -41,9 +41,9 @@ class Doctor(unittest.TestCase):
         return json.loads(run.stdout)
 
     def launch(self, **env):
-        path = self.home / 'Library/LaunchAgents/com.raulduk3.laya.plist'
+        path = self.home / 'Library/LaunchAgents/dev.raspy.laya.plist'
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {'Label': 'com.raulduk3.laya', 'ProgramArguments': ['/local/venv/bin/laya-serve'],
+        data = {'Label': 'dev.raspy.laya', 'ProgramArguments': ['/local/venv/bin/laya-serve'],
                 'EnvironmentVariables': {'LAYA_HOST': '127.0.0.1', 'LAYA_PORT': '18791',
                                          'LAYA_PRELOAD': '1', 'SECRET_ENV': 'DO NOT OUTPUT', **env}}
         path.write_bytes(plistlib.dumps(data))

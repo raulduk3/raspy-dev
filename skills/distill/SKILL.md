@@ -11,7 +11,7 @@ Turn a raw record (meeting transcript, message, email, notes, stored in the owne
 
 1. **Source.** Any raw record. It stays in the owner's notes; it is never copied into a repository.
    The HTML receives derived statements and a source reference by date and type only, for example
-   `client call, 2026-09-17`. No raw quotes and no names of private individuals.
+   `stakeholder call, 2026-09-17`. No raw quotes and no names of private individuals.
 2. **Extract** candidate statements. Each is one sentence in `MUST`, `MUST NOT` or `SHOULD` form,
    with a kind: `bug`, `amendment`, `feature` or `question`.
 3. **Read the repository.** Read `docs/spec/SDD.md`, `docs/spec/TDD.md`, the other documents under
