@@ -1,5 +1,7 @@
 # Rigs on working branches
 
+The model this builds on is in `docs/how-it-connects.md`.
+
 Every worker seat works in its own Git worktree, on the branch the loop cut for its
 issue. Seats join from a control rig that the owner starts once per engagement. This
 reuses the loop skill's branch contract; it does not add a second one.

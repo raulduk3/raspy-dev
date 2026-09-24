@@ -212,6 +212,12 @@ Revalidate against the installed CLI before changing the pinned version.
 
 ## Provenance: the local `config_home` patch
 
+Current installed build: `0.5.14 (113182b7)`, three commits on `feat/native-account-profiles`:
+`60f98ffb` per-seat `config_home`, `acaac553` epoch-seconds `resets_at` in the status-line
+collector, and `113182b7` herdr views that open inside a workspace labeled with the rig's
+name when one exists. The previous build is parked as `app-acaac553`; rollback is the same
+directory swap described below.
+
 The install under `~/.local/share/dev-platform/openrig-runtime/app` is a locally
 patched build, not stock upstream `0.5.14`:
 

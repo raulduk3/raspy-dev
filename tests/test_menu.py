@@ -121,7 +121,7 @@ class Menu(unittest.TestCase):
                  {'rigId': 'R1', 'logicalId': 'review.overseer', 'runtime': 'codex', 'sessionStatus': 'exited',
                   'lifecycleState': 'attention_required', 'agentActivity': {}, 'canonicalSessionName': 'review-overseer@t'}]
         with mock.patch.object(self.menu, 'seats', return_value=seats), mock.patch.dict(os.environ, {}, clear=False), \
-                mock.patch.object(self.menu.shutil, 'which', return_value=None):
+                mock.patch.object(self.menu, 'herdr', return_value=None):
             os.environ.pop('TMUX', None)
             output = self.drive(self.menu.team_menu, '2', '3', 'y', '4', 'y', team='t')
         self.assertIn('control.lead · claude-code · waiting on you\n', output)
@@ -130,42 +130,133 @@ class Menu(unittest.TestCase):
         self.assertIn('review.overseer · codex · stopped\n', output)
         runs = self.runs(output)
         self.assertEqual(runs[0], 'tmux attach -t control-lead@t')
-        self.assertTrue(runs[1].endswith('bin/rig launch R1 review.overseer'))
-        self.assertTrue(runs[2].endswith('bin/rig down R1'))
+        self.assertTrue(runs[1].endswith('bin/rig snapshot R1'))
+        self.assertTrue(runs[2].endswith('bin/rig launch R1 review.overseer'))
+        self.assertTrue(runs[3].endswith('bin/rig down R1'))
 
-    def herdr(self, workspaces, panes):
-        def fake(argv):
-            if argv[:3] == ['herdr', 'workspace', 'list']:
-                return {'result': {'workspaces': workspaces}}
-            if argv[:3] == ['herdr', 'pane', 'list']:
-                return {'result': {'panes': panes}}
-            return None
-        return mock.patch.object(self.menu, 'read_json', side_effect=fake)
+    class FakeHerdr:
+        """Answers herdr socket requests from a small in-memory state and records them."""
+        def __init__(self, workspaces=(), tabs=(), panes=()):
+            self.workspaces, self.tabs, self.panes, self.calls = list(workspaces), list(tabs), list(panes), []
 
-    SEATS = [{'logicalId': 'control.lead', 'sessionStatus': 'running', 'agentActivity': {}},
-             {'logicalId': 'review.overseer', 'sessionStatus': 'running', 'agentActivity': {}}]
+        def __call__(self, method, **params):
+            self.calls.append((method, params))
+            ws = params.get('workspace_id')
+            if method == 'workspace.list':
+                return {'workspaces': self.workspaces}
+            if method == 'workspace.create':
+                space = {'workspace_id': 'wNEW', 'label': params['label']}
+                self.workspaces.append(space)
+                self.tabs.append({'tab_id': 'wNEW:t1', 'workspace_id': 'wNEW', 'label': '1'})
+                return {'workspace': space}
+            if method == 'tab.list':
+                return {'tabs': [t for t in self.tabs if t['workspace_id'] == ws]}
+            if method == 'pane.list':
+                return {'panes': [p for p in self.panes if p['workspace_id'] == ws]}
+            if method == 'layout.apply':
+                tab = f"{ws}:{params['tab_label']}"
+                self.tabs.append({'tab_id': tab, 'workspace_id': ws, 'label': params['tab_label']})
+                def leaves(node):
+                    return [node] if node['type'] == 'pane' else leaves(node['first']) + leaves(node['second'])
+                for leaf in leaves(params['root']):
+                    self.panes.append({'pane_id': f"{tab}:{leaf['label']}", 'tab_id': tab, 'workspace_id': ws,
+                                       'label': leaf['label']})
+            return {}
 
-    def test_a_team_reuses_its_one_named_space_and_zooms_the_picked_agent(self):
-        workspaces = [{'workspace_id': 'w1', 'label': 't'}, {'workspace_id': 'w2', 'label': 'openrig:pod:t/control#l2'},
-                      {'workspace_id': 'w3', 'label': 'openrig:rig:t-two#l3'}, {'workspace_id': 'w4', 'label': '~'}]
-        panes = [{'pane_id': 'w1:p2', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'control.lead'},
-                 {'pane_id': 'w1:p3', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'review.overseer'},
-                 {'pane_id': 'w2:p2', 'tab_id': 'w2:t2', 'workspace_id': 'w2', 'label': 'control.lead'}]
-        with self.herdr(workspaces, panes), mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w4'}):
-            runs = self.runs(self.drive(self.menu.show_in_herdr, team='t', seats=self.SEATS, agent='review.overseer'))
-        self.assertEqual(runs, ['herdr workspace close w2', 'herdr pane zoom w1:p2 --off', 'herdr tab focus w1:t2',
-                                'herdr pane zoom w1:p3 --on', 'herdr workspace focus w1'])
+        def methods(self):
+            return [m for m, _ in self.calls if m not in ('workspace.list', 'tab.list', 'pane.list')]
 
-    def test_a_missing_or_incomplete_space_is_rebuilt_under_the_team_name(self):
-        workspaces = [{'workspace_id': 'w1', 'label': 't'}, {'workspace_id': 'w2', 'label': 'openrig:rig:t#l9'}]
-        panes = [{'pane_id': 'w1:p2', 'tab_id': 'w1:t2', 'workspace_id': 'w1', 'label': 'control.lead'}]
-        with self.herdr(workspaces, panes), mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': 'w2'}):
-            runs = self.runs(self.drive(self.menu.show_in_herdr, team='t', seats=self.SEATS))
-        # w1 lacks the overseer, so it goes; w2 holds this menu, so it stays and becomes the new space here.
-        self.assertEqual(runs[0], 'herdr workspace close w1')
-        self.assertTrue(runs[1].endswith('bin/rig terminal open t'))
-        self.assertEqual(runs[2], 'herdr workspace rename w2 t')
-        self.assertNotIn('herdr', runs)  # inside herdr it focuses, never nests
+    def seat(self, logical, status='running'):
+        return {'logicalId': logical, 'sessionStatus': status, 'agentActivity': {},
+                'canonicalSessionName': logical.replace('.', '-') + '@t'}
+
+    def show(self, fake, agent=None, here='wHERE'):
+        seats = [self.seat('control.lead'), self.seat('review.overseer'), self.seat('workers.issue-4'),
+                 self.seat('workers.issue-5', 'exited')]
+        with mock.patch.object(self.menu, 'herdr', fake), \
+                mock.patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_WORKSPACE_ID': here}):
+            with redirect_stdout(io.StringIO()):
+                return self.menu.show_in_herdr('t', seats, Path('/p/project'), agent)
+
+    def test_a_new_team_space_holds_rig_tui_and_every_running_agent_in_one_tab(self):
+        fake = self.FakeHerdr(workspaces=[{'workspace_id': 'wOLD', 'label': 'openrig:pod:t/control#l2'}])
+        self.assertTrue(self.show(fake, agent='review-overseer@t'))
+        self.assertEqual(fake.methods(), ['workspace.close', 'workspace.create', 'layout.apply', 'tab.close',
+                                          'tab.focus', 'pane.zoom', 'workspace.focus'])
+        created = next(p for m, p in fake.calls if m == 'workspace.create')
+        self.assertEqual(created, {'label': 't', 'cwd': '/p/project', 'focus': False})
+        applied = next(p for m, p in fake.calls if m == 'layout.apply')
+        self.assertEqual(applied['tab_label'], 'team')
+        tui, agents = applied['root']['first'], applied['root']['second']
+        self.assertEqual((tui['label'], tui['cwd'], tui['command'][-1]), ('rig tui', '/p/project', 'tui'))
+        self.assertTrue(tui['command'][1].endswith('bin/rig'))
+
+        def leaves(node):
+            return [node] if node['type'] == 'pane' else leaves(node['first']) + leaves(node['second'])
+        self.assertEqual([(l['label'], l['command']) for l in leaves(agents)], [
+            ('control-lead@t', ['tmux', 'attach', '-t', 'control-lead@t']),
+            ('review-overseer@t', ['tmux', 'attach', '-t', 'review-overseer@t']),
+            ('workers-issue-4@t', ['tmux', 'attach', '-t', 'workers-issue-4@t'])])  # the stopped issue-5 has no tile
+        self.assertIn(('tab.close', {'tab_id': 'wNEW:t1'}), fake.calls)
+        self.assertIn(('pane.zoom', {'pane_id': 'wNEW:team:review-overseer@t', 'mode': 'on'}), fake.calls)
+
+    def complete_space(self, labels):
+        return self.FakeHerdr(
+            workspaces=[{'workspace_id': 'w1', 'label': 't'}, {'workspace_id': 'wHERE', 'label': 'openrig:rig:t#l1'}],
+            tabs=[{'tab_id': 'w1:team', 'workspace_id': 'w1', 'label': 'team'}],
+            panes=[{'pane_id': f'w1:{l}', 'tab_id': 'w1:team', 'workspace_id': 'w1', 'label': l} for l in labels])
+
+    def test_a_complete_space_is_reused_untouched(self):
+        fake = self.complete_space(['rig tui', 'control-lead@t', 'review-overseer@t', 'workers-issue-4@t'])
+        self.assertTrue(self.show(fake))
+        self.assertEqual(fake.methods(), ['tab.focus', 'pane.zoom', 'workspace.focus'])  # the menu's own view stays
+
+    def test_a_space_missing_an_agent_or_from_an_older_layout_is_rebuilt(self):
+        for fake in (self.complete_space(['rig tui', 'control-lead@t', 'review-overseer@t']),
+                     self.FakeHerdr(workspaces=[{'workspace_id': 'w1', 'label': 't'}],
+                                    tabs=[{'tab_id': 'w1:s', 'workspace_id': 'w1', 'label': 'shell'}])):
+            self.assertTrue(self.show(fake))
+            self.assertEqual(fake.methods()[:3], ['workspace.close', 'workspace.create', 'layout.apply'])
+            self.assertIn(('workspace.close', {'workspace_id': 'w1'}), fake.calls)
+
+    def test_an_agent_ended_inside_its_tile_is_stopped_and_relaunched_cleanly(self):
+        self.menu.DRY = False
+        seat = dict(self.seat('review.overseer'), rigId='R1')
+        def answer(argv, **kwargs):
+            if argv[:2] == ['tmux', 'display']:
+                return mock.Mock(returncode=0, stdout='3272 /dev/ttys012\n')
+            if argv[0] == 'ps':  # only the pane's own shell is in the foreground
+                return mock.Mock(returncode=0, stdout=' 3272 Ss+\n 3300 S\n')
+            return mock.Mock(returncode=0, stdout='')
+        with mock.patch.object(self.menu.subprocess, 'run', side_effect=answer) as ran, \
+                mock.patch.object(self.menu.shutil, 'which', return_value='/bin/tmux'), \
+                mock.patch.object(self.menu, 'run') as handed:
+            self.assertEqual(self.menu.seat_state(seat), 'stopped, left at a shell')
+            self.menu.relaunch('R1', seat)
+        self.assertIn(mock.call(['tmux', 'kill-session', '-t', 'review-overseer@t'], capture_output=True), ran.call_args_list)
+        self.assertEqual([c.args[0][-3:] for c in handed.call_args_list],
+                         [[str(self.menu.ROOT / 'bin/rig'), 'snapshot', 'R1'], ['launch', 'R1', 'review.overseer']])
+
+    def test_an_agent_under_a_wrapper_script_is_not_mistaken_for_a_bare_shell(self):
+        self.menu.DRY = False
+        seat = self.seat('review.overseer')
+
+        def answer(argv, **kwargs):
+            if argv[:2] == ['tmux', 'display']:
+                return mock.Mock(returncode=0, stdout='3272 /dev/ttys012\n')
+            return mock.Mock(returncode=0, stdout=' 3272 Ss\n 3301 S+\n 3302 S+\n')  # the agent holds the terminal
+        with mock.patch.object(self.menu.subprocess, 'run', side_effect=answer), \
+                mock.patch.object(self.menu.shutil, 'which', return_value='/bin/tmux'):
+            self.assertFalse(self.menu.exited_to_shell(seat))
+            self.assertEqual(self.menu.seat_state(seat), 'running')
+
+    def test_without_herdr_an_agent_opens_directly_in_tmux(self):
+        seats = [self.seat('control.lead')]
+        with mock.patch.object(self.menu, 'herdr', return_value=None), \
+                mock.patch.object(self.menu, 'seats', return_value=[dict(seats[0], rigId='R1')]):
+            os.environ.pop('TMUX', None)
+            output = self.drive(self.menu.team_menu, '2', team='t')
+        self.assertIn('RUN tmux attach -t control-lead@t', output)
 
     def test_loop_dispatches_seats_only_into_a_running_team(self):
         with mock.patch.object(self.menu, 'rigs', return_value=[]):
@@ -178,6 +269,14 @@ class Menu(unittest.TestCase):
         self.assertTrue(runs[0].endswith('bin/ai-work loop owner-repo-1 go LOOP_SEAT_RIG=iztac-research-agent'))
         self.assertTrue(runs[1].endswith('bin/ai-work loop owner-repo-1 status'))
         self.assertIn('dev-loop fold owner/repo <issue>', output)
+
+    def test_iztac_is_on_the_home_screen_and_asks_for_a_project_first(self):
+        other = dict(self.project, id='elsewhere', source='discovered', root='/x/other')
+        with mock.patch.object(self.menu, 'catalog', return_value=[self.project, other]), \
+                mock.patch.object(self.menu, 'role_menu') as role:
+            output = self.drive(self.menu.iztac_menu, '1')
+        self.assertNotIn('other', output)
+        role.assert_called_once_with('iztac', self.project)
 
     def test_choosing_filters_and_refuses_numbers_that_are_not_shown(self):
         items = [('alpha', 'a'), ('beta', 'b'), ('alphabet', 'c')]

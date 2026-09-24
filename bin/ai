@@ -10,11 +10,13 @@ prints each launch instead of running it.
 """
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import re
 import select
 import shutil
+import socket
 import subprocess
 import sys
 import termios
@@ -435,25 +437,51 @@ def seats(team):
     return read_json(tool("rig") + ["ps", "--nodes", "--rig", team, "--json"]) or []
 
 
+def exited_to_shell(seat):
+    """An agent ended from inside its tile leaves its seat's terminal at a bare shell: the
+    shell tmux started is then the only foreground process on that terminal. The command
+    name alone cannot tell, because an agent may itself run under a shell-script wrapper."""
+    if DRY or not seat.get("canonicalSessionName") or not shutil.which("tmux"):
+        return False
+    shown = subprocess.run(["tmux", "display", "-p", "-t", seat["canonicalSessionName"], "#{pane_pid} #{pane_tty}"],
+                           capture_output=True, text=True).stdout.split()
+    if len(shown) != 2:
+        return False
+    listing = subprocess.run(["ps", "-o", "pid=,stat=", "-t", Path(shown[1]).name], capture_output=True, text=True)
+    foreground = [row.split()[0] for row in listing.stdout.splitlines() if len(row.split()) == 2 and "+" in row.split()[1]]
+    return foreground == [shown[0]]
+
+
 def seat_state(seat):
     activity = seat.get("agentActivity") or {}
     if seat.get("sessionStatus") != "running":
         return "stopped"
+    if exited_to_shell(seat):
+        return "stopped, left at a shell"
     if activity.get("state") == "needs_input" or "prompt" in str(activity.get("reason")):
         return "waiting on you"
     state = {"running": "working", "idle": "idle"}.get(activity.get("state"), "running")
     return state + (" · OpenRig asks you to look" if seat.get("lifecycleState") == "attention_required" else "")
 
 
+def team_project(team):
+    """A team belongs to one project: iztac-<project>. Other teams have none."""
+    return next((p for p in catalog() if team_name(p) == team), None)
+
+
 def teams_menu():
     while True:
-        items = [(f"{r.get('rigName') or r.get('name')} · {r.get('runningCount', 0)} of {r.get('nodeCount', 0)} running"
-                  + (f" · {r['attentionCount']} need you" if r.get("attentionCount") else ""),
-                  r.get("rigName") or r.get("name")) for r in rigs()]
+        items = []
+        for r in rigs():
+            team = r.get("rigName") or r.get("name")
+            project = team_project(team)
+            items.append((f"{team} · {name(project) if project else 'no project'} · "
+                          f"{r.get('runningCount', 0)} of {r.get('nodeCount', 0)} running"
+                          + (f" · {r['attentionCount']} need you" if r.get("attentionCount") else ""), team))
         team = choose("Teams", items, None if items else "No team is running. Start one from a project.")
         if team is None:
             return
-        team_menu(team)
+        team_menu(team, team_project(team))
 
 
 def project_team(project):
@@ -471,92 +499,163 @@ def project_team(project):
 
 
 def team_menu(team, project=None):
+    folder = Path(project["root"]) if project else HOME
     while True:
         rows = seats(team)
         rig_id = rows[0]["rigId"] if rows else None
-        items = [("See every agent at once in herdr", "view")]
+        items = [("Open the team's space in herdr", "view")]
         items += [(f"{s['logicalId']} · {s.get('runtime')} · {seat_state(s)}", s) for s in rows]
         if project:
             items += [("Seat a loop worktree", "seat"), ("Unseat a finished worker", "unseat")]
         items.append(("Stop this team", "stop"))
-        pick = choose(f"Team {team}", items, "Pick an agent to open it inside this team's herdr space.")
+        where = f" · {name(project)}" if project else ""
+        pick = choose(f"Team {team}{where}", items, "The team's space holds rig tui and every agent in one tab.")
         if pick is None:
             return
         if pick == "view":
-            show_in_herdr(team, rows) if shutil.which("herdr") else note("herdr is not installed.")
+            show_in_herdr(team, rows, folder)
         elif pick == "stop":
             if confirm(f"Stop every agent in {team}? OpenRig keeps a snapshot."):
                 run(tool("rig") + ["down", rig_id or team])
-                for space in team_spaces(team) if shutil.which("herdr") else []:
-                    quiet(["herdr", "workspace", "close", space["workspace_id"]])
+                close_team_spaces(team)
                 return
         elif pick in ("seat", "unseat"):
             worker_seat(project, team, pick)
-        elif seat_state(pick) == "stopped":
+        elif seat_state(pick).startswith("stopped"):
             if confirm(f"{pick['logicalId']} is stopped. Relaunch it with its saved conversation?"):
-                run(tool("rig") + ["launch", rig_id, pick["logicalId"]])
-        elif shutil.which("herdr"):
-            show_in_herdr(team, rows, pick["logicalId"])
-        else:
+                relaunch(rig_id, pick)
+        elif not show_in_herdr(team, rows, folder, pick["canonicalSessionName"]):
             session = pick["canonicalSessionName"]
             run(["tmux", "switch-client", "-t", session] if os.environ.get("TMUX") else ["tmux", "attach", "-t", session])
 
 
-def quiet(argv):
-    """A control call whose output means nothing to the user: herdr's replies, OpenRig's tile list."""
+def relaunch(rig_id, seat):
+    """OpenRig relaunches only a seat whose terminal is gone, and only from a snapshot. A
+    terminal left at a bare shell holds nothing, so it is closed first."""
+    if exited_to_shell(seat):
+        subprocess.run(["tmux", "kill-session", "-t", seat["canonicalSessionName"]], capture_output=True)
+    run(tool("rig") + ["snapshot", rig_id], pause=False)
+    run(tool("rig") + ["launch", rig_id, seat["logicalId"]], pause=True)
+
+
+# Herdr ----------------------------------------------------------------------------------
+# A team's space is built here over herdr's socket, the protocol OpenRig's own adapter
+# uses: one space per team named after it, opened in the project's folder, with one tab
+# holding rig tui and a tile for each running agent. A tile only views an agent through
+# tmux; closing a tile, tab or space stops nothing.
+
+HERDR_SOCKET = Path(os.environ.get("HERDR_SOCKET_PATH", HOME / ".config/herdr/herdr.sock"))
+
+
+def herdr(method, **params):
+    """One request on herdr's socket. Returns the result, or None when herdr is not running
+    or refuses. A dry run prints the request instead."""
     if DRY:
-        return run(argv)
-    return subprocess.run([str(a) for a in argv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+        print("HERDR " + method + " " + json.dumps(params, sort_keys=True))
+        return None
+    try:
+        with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(5)
+            conn.connect(str(HERDR_SOCKET))
+            request = {"id": f"ai-{time.monotonic_ns()}", "method": method, "params": params}
+            conn.sendall((json.dumps(request) + "\n").encode())
+            data = b""
+            while b"\n" not in data and (chunk := conn.recv(65536)):
+                data += chunk
+        return json.loads(data.split(b"\n")[0]).get("result")
+    except (OSError, ValueError):
+        return None
 
 
-def herdr_json(*args):
-    return (read_json(["herdr", *args]) or {}).get("result", {})
+def grid(nodes):
+    """Equal tiles, as close to square as the count allows, like OpenRig's auto-grid."""
+    def strip(items, direction):
+        if len(items) == 1:
+            return items[0]
+        return {"type": "split", "direction": direction, "ratio": 1 / len(items),
+                "first": items[0], "second": strip(items[1:], direction)}
+    columns = math.ceil(math.sqrt(len(nodes)))
+    return strip([strip(nodes[i:i + columns], "right") for i in range(0, len(nodes), columns)], "down")
 
 
-def team_spaces(team):
-    """Every herdr space showing this team: OpenRig's own views and the one this menu names."""
-    pattern = re.compile(rf"openrig:(rig:{re.escape(team)}#|pod:{re.escape(team)}/)|{re.escape(team)}$")
-    return [w for w in herdr_json("workspace", "list").get("workspaces", []) if pattern.match(w.get("label", ""))]
+def openrig_views(team):
+    """The spaces OpenRig's own open command makes for a team; each one duplicates tiles."""
+    pattern = re.compile(rf"openrig:(rig:{re.escape(team)}#|pod:{re.escape(team)}/)")
+    return [w for w in (herdr("workspace.list") or {}).get("workspaces", []) if pattern.match(w.get("label") or "")]
 
 
-def team_space(team, agents):
-    """One herdr space per team, named after it. It is reused while it still holds a tile for
-    every running agent, and rebuilt otherwise. Other views of the team are closed; closing a
-    view only detaches its viewers, and no agent stops."""
-    panes = herdr_json("pane", "list").get("panes", [])
-    tiles = lambda space: {p.get("label") for p in panes if p["workspace_id"] == space["workspace_id"]}
-    spaces = team_spaces(team)
-    keep = next((w for w in spaces if w["label"] == team and set(agents) <= tiles(w)), None)
+def close_team_spaces(team):
+    views = {v["workspace_id"] for v in openrig_views(team)}
+    for space in (herdr("workspace.list") or {}).get("workspaces", []):
+        if space.get("label") == team or space["workspace_id"] in views:
+            herdr("workspace.close", workspace_id=space["workspace_id"])
+
+
+def team_layout(seats, folder):
+    """rig tui in a column on the left, then a tile for every running agent."""
+    tui = {"type": "pane", "label": "rig tui", "cwd": str(folder),
+           "command": [sys.executable, str(ROOT / "bin/rig"), "tui"]}
+    # Tiles are labeled with the seat's session name: OpenRig's herdr adapter matches the same
+    # label, so opening a seat from rig tui focuses its tile here instead of making a new space.
+    agents = [{"type": "pane", "label": s["canonicalSessionName"], "command": ["tmux", "attach", "-t", s["canonicalSessionName"]]}
+              for s in seats if not seat_state(s).startswith("stopped")]
+    if not agents:
+        return tui
+    return {"type": "split", "direction": "right", "ratio": 0.34, "first": tui, "second": grid(agents)}
+
+
+def team_space(team, seats, folder):
+    """Find or build the team's one space: a single tab named team, holding rig tui and a
+    tile for every running agent. A space missing any of them is rebuilt whole."""
     here = os.environ.get("HERDR_WORKSPACE_ID")
-    for space in spaces:
-        if space is not keep and space["workspace_id"] != here:
-            quiet(["herdr", "workspace", "close", space["workspace_id"]])
-    if keep is None:
-        quiet(tool("rig") + ["terminal", "open", team])
-        fresh = [w for w in team_spaces(team) if w["label"] != team]
-        if not fresh:
-            note(f"OpenRig could not show {team} in herdr; pick an agent to open it on its own.")
-            return None
-        keep = fresh[-1]
-        quiet(["herdr", "workspace", "rename", keep["workspace_id"], team])
-    return keep["workspace_id"]
+    for view in openrig_views(team):
+        if view["workspace_id"] != here:
+            herdr("workspace.close", workspace_id=view["workspace_id"])
+    wanted = {"rig tui"} | {s["canonicalSessionName"] for s in seats if not seat_state(s).startswith("stopped")}
+    keep = None
+    for candidate in (herdr("workspace.list") or {}).get("workspaces", []):
+        if candidate.get("label") != team:
+            continue
+        space_id = candidate["workspace_id"]
+        tabs = [t["tab_id"] for t in (herdr("tab.list", workspace_id=space_id) or {}).get("tabs", [])
+                if t.get("label") == "team"]
+        shown = {p.get("label") for p in (herdr("pane.list", workspace_id=space_id) or {}).get("panes", [])
+                 if p["tab_id"] in tabs}
+        if keep is None and len(tabs) == 1 and wanted <= shown:
+            keep = space_id
+        elif space_id != here:
+            herdr("workspace.close", workspace_id=space_id)  # missing an agent, or an older layout
+    if keep:
+        return keep
+    created = herdr("workspace.create", label=team, cwd=str(folder), focus=False)
+    if not created:
+        return None
+    keep = created["workspace"]["workspace_id"]
+    starter = (herdr("tab.list", workspace_id=keep) or {}).get("tabs", [])
+    herdr("layout.apply", workspace_id=keep, tab_label="team", focus=True, root=team_layout(seats, folder))
+    for tab in starter:
+        herdr("tab.close", tab_id=tab["tab_id"])  # the empty shell a new space starts with
+    return keep
 
 
-def show_in_herdr(team, seats, agent=None):
-    """Bring up the team's space; with an agent, zoom its tile, without one, show them all."""
-    space = team_space(team, [s["logicalId"] for s in seats if seat_state(s) != "stopped"])
+def show_in_herdr(team, seats, folder, agent=None):
+    """Open the team's space, on one agent's tile when one is named. False when herdr is
+    not running, so the caller can open the agent directly instead."""
+    space = team_space(team, seats, folder)
     if space is None:
-        return
-    for pane in herdr_json("pane", "list").get("panes", []):
-        if pane["workspace_id"] == space and pane.get("label"):
-            chosen = pane["label"] == agent
-            if chosen:
-                quiet(["herdr", "tab", "focus", pane["tab_id"]])
-            quiet(["herdr", "pane", "zoom", pane["pane_id"], "--on" if chosen else "--off"])
-    quiet(["herdr", "workspace", "focus", space])
+        if agent is None:
+            note("herdr is not running. Run `herdr` in another terminal, then open the space again.")
+        return False
+    panes = [p for p in (herdr("pane.list", workspace_id=space) or {}).get("panes", []) if p.get("label")]
+    target = next((p for p in panes if p["label"] == agent), panes[0] if panes else None)
+    if target:
+        herdr("tab.focus", tab_id=target["tab_id"])
+        herdr("pane.zoom", pane_id=target["pane_id"], mode="on" if agent else "off")
+    herdr("workspace.focus", workspace_id=space)
     if not os.environ.get("HERDR_ENV"):
         print(f"  Opening {team} in herdr. Ctrl+b then q comes back here; every agent keeps running.")
         run(["herdr"])
+    return True
 
 
 def worktrees(project, seated):
@@ -611,12 +710,21 @@ def loop_menu(project):
 
 # Home -----------------------------------------------------------------------------------
 
+def iztac_menu():
+    """Iztac works on one project at a time, so the project comes first."""
+    items = [(f"{name(p)} · {p['repo']}", p) for p in catalog() if p["source"] == "repos.conf" and p["available"]]
+    project = choose("Iztac on which project?", items, "Iztac works in projects listed in repos.conf.")
+    if project:
+        role_menu("iztac", project)
+
+
 def home():
     here = project_for(Path.cwd())
     while True:
         items = [(f"This project: {name(here)}", lambda: project_menu(here))] if here else []
         items += [("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
                   ("Morty, personal", lambda: role_menu("morty")), ("Neo, this machine", lambda: role_menu("neo")),
+                  ("Iztac, on a project", iztac_menu),
                   ("Teams", teams_menu), ("Accounts and setup", accounts_menu)]
         bad = accounts.conflicts(os.environ)
         hint = ("This shell carries provider overrides, so launches will refuse: " + ", ".join(bad)

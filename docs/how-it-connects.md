@@ -3,67 +3,105 @@
 A map of the AI setup on this machine, written for the person who uses it. Read the
 first two sections and you can use the whole thing. The rest is reference.
 
-## The five words
+## The model
 
-**Account.** One subscription you have logged into. There are four:
+Everything on this machine is one of these things. Each is owned by exactly one other
+thing, or by nothing, and each has one tool that manages it.
 
-| Account | Provider | Plan | Where its files live |
-| --- | --- | --- | --- |
-| `anthropic-gmail` | Anthropic, Claude Code | Max | `~/.claude` (the machine default) |
-| `openai-apple` | OpenAI, Codex | Pro Lite | `~/.codex` (the machine default) |
-| `anthropic-apple` | Anthropic, Claude Code | Max | `~/.local/share/dev-platform/accounts/anthropic-apple` |
-| `openai-gmail` | OpenAI, Codex | Pro Lite | `~/.local/share/dev-platform/accounts/openai-gmail` |
+| Thing | What it is | Where it lives |
+| --- | --- | --- |
+| **Account** | One subscription you have signed in to. There are four. | `~/.config/dev-platform/accounts.json` |
+| **Home** | An account's own folder: login, settings, past transcripts. | `~/.claude`, `~/.codex`, or `accounts/<account>` |
+| **Project** | One Git repository. | its checkout, usually `~/Dev/<project>` |
+| **Worktree** | One branch of a project, checked out in its own folder. | `<checkout>/.claude/worktrees/` |
+| **Session** | One conversation with one agent, in one folder, as one account. | a transcript inside that account's home |
+| **Role** | Morty, Neo or Iztac: a persona and what it may touch. | `agents/<role>/identity.md` |
+| **Conversation** | A role's durable thread, which spans many Pi sessions. | `sessions/conversations/<id>/` |
+| **Rig**, or team | Agents working together on one project. | OpenRig's database, plus an engagement folder |
+| **Pod** | A group of seats in a rig: control, review, workers. | the rig's spec |
+| **Seat** | One agent slot: a runtime, a home, a folder and a tmux session. | tmux session `<pod>-<member>@<rig>` |
+| **Space** | herdr's view of one rig. | herdr, labeled with the rig's name |
+| **Tile** | A viewer of one seat, in the space's one tab beside `rig tui`. | a herdr pane |
 
-**Home.** The folder an account's files live in: its login, its settings, its history of
-past sessions. Two accounts use the folders Claude and Codex create by default. The other
-two have their own separate folders, so they never mix. A home is not a project; it is the
-agent's own memory and identity, wherever the project happens to be.
-
-**Seat.** One coding agent, running in one terminal window, working in one folder. A seat
-is either Claude Code or Codex, and since today a seat can be told which account to be.
-
-**Rig.** A named group of seats. A rig with one seat is the normal case. A rig with four
-seats is a team. OpenRig ships templates for teams.
-
-**OpenRig.** The program that starts, watches and stops seats. It runs as a background
-service on this machine, called the daemon, and it has a full-screen dashboard you open
-in your terminal. It uses tmux underneath, which is why every seat is a tmux window.
-
-That is the whole vocabulary. Everything below is these five things arranged.
-
-## The map
-
-```
-   you, in a terminal
-        |
-        |  dev-workspace            ai-usage            ai-account / ai-profile
-        v                             v                        v
-   +--------------------+     +----------------+     +----------------------+
-   |  OpenRig dashboard |     | usage readout  |     | account bindings and |
-   |  (rig tui)         |     | all 4 accounts |     | home provisioning    |
-   +--------------------+     +----------------+     +----------------------+
-        |                             ^                        |
-        v                             |                        v
-   +--------------------+             |              +----------------------+
-   |  OpenRig daemon    |-------------+              | ~/.config/dev-platform|
-   |  port 7433         |  seat status line cache    |   accounts.json      |
-   +--------------------+                            | (which account has   |
-        |                                            |  which home)         |
-        | starts seats in tmux                       +----------------------+
-        v
-   +----------+ +----------+ +----------+ +----------+
-   | seat     | | seat     | | seat     | | seat     |
-   | claude   | | codex    | | claude   | | codex    |
-   +----------+ +----------+ +----------+ +----------+
-        |            |            |            |
-        v            v            v            v
-     account A    account B    account C    account D   (each seat reads and
-     home         home         home         home         writes only its own)
+```mermaid
+classDiagram
+  direction LR
+  Account "1" --> "1" Home : signs in to
+  Project "1" *-- "0..*" Worktree : branches
+  Project "1" --> "0..1" Rig : its team
+  Rig "1" *-- "1..*" Pod
+  Pod "1" *-- "0..*" Seat
+  Rig "1" --> "1" EngagementFolder : control and review work here
+  Seat "0..*" --> "1" Home : runs as
+  Seat "1" --> "1" Session : runs one at a time
+  Seat "0..*" --> "1" EngagementFolder : or
+  Seat "0..1" --> "1" Worktree : a worker works here
+  Session "0..*" --> "1" Home : transcript kept in
+  Role "1" *-- "0..*" Conversation
+  Conversation "1" *-- "0..*" Session : its Pi sessions
+  Conversation "0..*" --> "0..1" Project : Iztac only
+  Rig "1" --> "0..1" Space : shown as
+  Space "1" *-- "1" RigTui : dashboard, in the project folder
+  Space "1" *-- "0..*" Tile : one per running seat
+  Tile "1" --> "1" Seat : views
 ```
 
-The one arrow that matters: a seat is bound to exactly one account home. It logs in as
-that account, it consumes that account's quota, and its history is written into that home
-and nowhere else.
+The rules that follow from it:
+
+- **A project owns its code.** Its checkout, its worktrees and its loop ledger. The only
+  agent that writes inside it is a worker seat, in its own worktree, on its own branch.
+- **A rig belongs to one project.** The menu names it `iztac-<project>`. Its control seat
+  and overseer work from an engagement folder outside the repository, so the day branch
+  stays clean. One running rig per project.
+- **A seat belongs to one rig.** OpenRig enforces this: a seat is one tmux session with one
+  owner. What crosses rigs is everything above a seat. Any seat in any rig can run as any
+  account. The same role definitions serve every rig. A session's history outlives its seat.
+- **A session is one conversation.** One runtime, one account, one folder. A plain Claude
+  session you open in a project has no rig and no seat, and that is normal. A seat runs one
+  session at a time and resumes it when relaunched.
+- **A space is only a view.** It holds tiles, and a tile only watches a seat through tmux.
+  Closing a tile or a whole space stops nothing. The menu keeps exactly one space per rig,
+  with one tab: `rig tui` on the left, opened in the project folder, and a tile for every
+  running agent beside it. Picking an agent in the menu zooms its tile in that space. It
+  never opens a new one. A space that is missing an agent is rebuilt whole.
+- **Accounts sit above everything.** They belong to no project or rig. `ai-usage` reads
+  them all at once.
+
+| Tool | Manages |
+| --- | --- |
+| `ai` | Everything. The menu, and the only command you need day to day. |
+| `ai-work`, `dev-loop` | Projects, worktrees and the development loop. |
+| `ai-session` | Sessions and conversations. |
+| `ai-role` | Opening a role's conversation. |
+| `ai-account`, `ai-environment`, `ai-login`, `ai-profile` | Accounts and homes. |
+| `ai-usage` | How much each account has left. |
+| `dev-workspace` | Starting rigs, and adding or removing worker seats. |
+| `rig` | OpenRig itself: rigs, pods and seats. |
+| `tmux` | The terminal each seat runs in. |
+| `herdr` | Spaces and tiles. |
+
+On disk:
+
+```
+~/Dev/<project>/                          a project's checkout
+  .claude/worktrees/day-<date>/           the loop's day branch
+  .claude/worktrees/loop-<N>-<slug>/      one issue's branch; its worker seat works here
+~/.claude  ~/.codex                       the two default homes
+~/.config/dev-platform/                   accounts.json, repos.conf, personal.conf
+~/.local/share/dev-platform/
+  accounts/<account>/                     the two isolated homes
+  accounts/pi/<account>/                  Pi profiles
+  current -> releases/<commit>/           the platform: bin, lib, agents, integrations
+  openrig-runtime/                        OpenRig, pinned
+~/.local/state/dev-platform/
+  sessions/                               the session index and role conversations
+  engagements/<project>/                  where a project's control seat and overseer work
+  openrig/                                rig specs and worker fragments the launcher writes
+  loop/<owner__repo>/                     the loop ledger
+  usage/                                  Claude usage readings
+~/.openrig/                               OpenRig's daemon database
+~/.config/herdr/                          herdr's server socket and saved layout
+```
 
 ## What OpenRig writes into your project folder, and why
 
@@ -88,8 +126,9 @@ the guidance files back. `docs/rig-working-branches.md` has the commands.
 ## Day to day
 
 **Start with the menu.** One command covers everything below: projects, sessions, Morty,
-Neo, Iztac, teams and accounts. Pick by number, type to filter, Enter goes back, q quits.
-Anything you open hands over the terminal and comes back to the menu when you leave it.
+Neo, Iztac, teams and accounts. Arrow keys move, typing filters, Enter opens, Esc goes back,
+Ctrl+C quits. Anything you open hands over the terminal and comes back to the menu when you
+leave it.
 
 ```bash
 ai
@@ -150,23 +189,10 @@ tmux attach -t <seat-name>        # Ctrl-b then d to detach
 rig down <rig-name>               # stops every seat, keeps a snapshot
 ```
 
-## Where things are stored
-
-| What | Where |
-| --- | --- |
-| Which account has which home | `~/.config/dev-platform/accounts.json` (no secrets) |
-| The four account homes | see the table at the top |
-| The platform commands | `~/.local/bin/*` -> `~/.local/share/dev-platform/current/bin/*` |
-| The activated platform release | `~/.local/share/dev-platform/current` -> `releases/<commit>` |
-| OpenRig itself | `~/.local/share/dev-platform/openrig-runtime/app` (patched), `app-stock-cc75efdd` (original) |
-| OpenRig's state and database | `~/.openrig` |
-| Per-account rig specs the launcher generates | `~/.local/state/dev-platform/openrig/` |
-| Usage readings | `~/.local/state/dev-platform/usage/<account>.json` |
-| Pi role conversations | `~/.local/state/dev-platform/sessions/conversations/` |
-
 ## What was changed on this machine, and how to undo each
 
-- **OpenRig is a local fork.** Build `0.5.14 (60f98ffb)` adds the per-seat `config_home`
+- **OpenRig is a local fork.** Build `0.5.14 (113182b7)` opens herdr views inside the rig's
+  own space, and adds the per-seat `config_home`
   field. Stock 0.5.14 is parked beside it. Undo: swap the two `app` directories and restart
   the daemon. Provenance and the upstream contribution notes are in the migration workspace.
 - **The daemon runs outside OpenClaw.** It used to inherit OpenClaw's environment, including
@@ -183,6 +209,12 @@ rig down <rig-name>               # stops every seat, keeps a snapshot
   back at the previous release directory.
 
 ## Known limits
+
+- **Open a team from the menu once before using `rig tui` to open agents.** The patched
+  OpenRig opens agents inside a space named for their rig, and the menu is what builds that
+  space. Before it exists, OpenRig falls back to making a new space for each open.
+- **Ending an agent from inside its tile leaves a bare shell in its seat.** The menu shows
+  that seat as stopped and relaunches it on request. Leave a tile with Ctrl+b then q instead.
 
 - **Claude usage is a snapshot.** No command can ask Anthropic for it; only a running session
   reports it. Expect an age on every Claude number.
