@@ -2,6 +2,7 @@
 """Run committed Pi role checks in an image without account homes or networking."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -52,8 +53,22 @@ def main():
                 expected = {'node': 'v24.14.0', 'pi': '0.87.1'}[executable]
                 if result.stdout.strip() != expected:
                     raise RuntimeError(f'{executable} version differs from {expected}')
+        with tempfile.TemporaryDirectory(prefix='pi-native-conversation-') as conversation:
+            for phase in ('create', 'resume'):
+                print(f'Checking native bind-mount session {phase}', flush=True)
+                # Each invocation creates and removes a different container.
+                # Stable container paths preserve the native cwd and transcript.
+                command = [*prefix[:-1], '--user', f'{os.getuid()}:{os.getgid()}',
+                           '--mount', f'type=bind,source={conversation},target=/conversation',
+                           '--entrypoint', 'node', image,
+                           '/platform/integrations/pi/check-session-mount.mjs', phase, '/conversation']
+                result = subprocess.run(command, capture_output=True, text=True, timeout=90)
+                print(result.stdout, end='', flush=True)
+                if result.returncode:
+                    print(result.stderr, end='', flush=True)
+                    result.check_returncode()
     print(json.dumps({'passed': True, 'image': image, 'revision': revision,
-                      'checks': len(checks), 'scope': 'Offline image components; no account authentication or bind-mounted conversation acceptance'}))
+                      'checks': len(checks) + 2, 'scope': 'Offline image components and native bind-mount recovery; no account authentication or model request'}))
 
 
 if __name__ == '__main__':
