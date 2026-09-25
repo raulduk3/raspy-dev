@@ -736,7 +736,7 @@ def worker_seat(project, team, action):
         run(tool("dev-workspace") + ["remove-worker", "--rig", team, "--cwd", folder], pause=True)
         issue = re.match(r"loop-(\d+)-", folder.name)
         if issue and project["repo"]:
-            note(f"Folding stays your own step. When you have read the diff, run:\n"
+            note(f"Folding releases the seat itself; to merge it up into the goal's branch, run:\n"
                  f"  dev-loop fold {project['repo']} {issue.group(1)}")
         return
     client = choose("Which agent?", [("Claude", "claude"), ("Codex", "codex")])
@@ -750,12 +750,12 @@ def worker_seat(project, team, action):
 
 def loop_menu(project):
     team = team_for(project)
-    verbs = [("Status", "status"), ("Plan the day", "plan"), ("Start the day", "start"),
+    verbs = [("Status", "status"), ("Plan", "plan"), ("Start a branch for a goal", "start"),
              ("Dispatch workers in the background", "go"),
              (f"Dispatch workers as seats in {team}", "seats"),
              ("Pause dispatch", "pause"), ("Cycle report", "collect")]
     closing = "close --merge" if project.get("mode") == "local" else "close"
-    hint = (f"Folding and closing stay your own steps: dev-loop fold {project['repo']} <issue>, "
+    hint = (f"Finished workers merge up into the goal's branch; landing it is your step: "
             f"dev-loop {closing} {project['repo']}")
     while (verb := choose(f"Development loop · {project['repo']}", verbs, hint)) is not None:
         if verb == "seats":
@@ -763,6 +763,10 @@ def loop_menu(project):
                 note(f"Start {team} first, under This project's team.")
                 continue
             run(tool("ai-work") + ["loop", project["id"], "go"], extra={"LOOP_SEAT_RIG": team}, pause=True)
+        elif verb == "start":
+            branch = ask("Branch for this goal (type/slug, for example feat/snake-game): ")
+            if branch:
+                run(tool("ai-work") + ["loop", project["id"], "start", branch], pause=True)
         else:
             run(tool("ai-work") + ["loop", project["id"], verb], pause=True)
 

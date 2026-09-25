@@ -316,7 +316,12 @@ class Menu(unittest.TestCase):
         runs = self.runs(output)
         self.assertTrue(runs[0].endswith('bin/ai-work loop owner-repo-1 go LOOP_SEAT_RIG=iztac-research-agent'))
         self.assertTrue(runs[1].endswith('bin/ai-work loop owner-repo-1 status'))
-        self.assertIn('dev-loop fold owner/repo <issue>', output)
+        self.assertIn('landing it is your step: dev-loop close owner/repo', output)
+
+    def test_starting_the_loop_names_the_goal_branch(self):
+        output = self.drive(self.menu.loop_menu, '3', 'feat/snake-game', project=self.project)
+        self.assertTrue(self.runs(output)[0].endswith('bin/ai-work loop owner-repo-1 start feat/snake-game'))
+        self.assertEqual(self.runs(self.drive(self.menu.loop_menu, '3', '', project=self.project)), [])
 
     def test_iztac_is_on_the_home_screen_and_asks_for_a_project_first(self):
         other = dict(self.project, id='elsewhere', source='discovered', root='/x/other')

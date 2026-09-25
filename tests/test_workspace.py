@@ -151,6 +151,8 @@ class Workspace(unittest.TestCase):
         direct = self.run_command([PLATFORM / 'skills/loop/scripts/loop.sh', 'status', 'owner/project'])
         self.assertIn('steer: pause', direct.stdout)
         (ledger / 'dispatch-lock').mkdir()
+        self.assertNotEqual(self.cli('loop', 'owner/project', 'start', check=False).returncode, 0)
+        self.assertNotEqual(self.cli('loop', 'owner/project', 'start', 'loop/2026-09-24', check=False).returncode, 0)
         locked = self.cli('loop', 'owner/project', 'go', 'only', '12', check=False)
         self.assertEqual(locked.returncode, 3)
         self.assertIn('another dispatch', locked.stderr)
