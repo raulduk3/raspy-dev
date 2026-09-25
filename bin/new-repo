@@ -9,8 +9,8 @@
 # .prettierignore, .gitignore, a README stub), commits on main, tags v0.1.0 so the version
 # derives, creates develop, and, when --github names a repository, creates it with gh, pushes both
 # branches and applies the rulesets under github/rulesets/. Without --github nothing leaves the
-# machine: the repository is local, its tasks are files in docs/tasks/, and the loop merges its
-# days back locally. It is left on develop. --register adds it to repos.conf (local, or owner with
+# machine: the repository is local, its tasks are files in docs/tasks/, and the loop merges each
+# goal's rig branch back locally. It is left on develop. --register adds it to repos.conf (local, or owner with
 # --github) so Iztac, the team and the loop can find it; --personal also lists it in
 # personal.conf as the owner's own project. Exit 0 on success.
 set -euo pipefail

@@ -68,7 +68,7 @@ no shell-string execution or arbitrary command argument.
 
 - `status` reads the existing loop view (the underlying loop may create its ledger
   directories); `plan` and `collect` retain their existing behavior and dependencies.
-- `start` may fetch the configured base and create a day branch/worktree.
+- `start <type/slug>` may fetch the configured base and create the goal's rig branch and worktree.
 - `go` is explicit worker dispatch and requires prior task authorization. Its only
   optional arguments are `only` or `skip` followed by positive issue numbers.
 - **`pause` stops future dispatch. It does not terminate, interrupt, or acknowledge

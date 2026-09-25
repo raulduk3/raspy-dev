@@ -98,19 +98,10 @@ ACCEPTANCE, VERIFY, TIMEBOX, FORBIDDEN, REPORT, STANDING. The seat definitions u
 
 ### Branches, not days
 
-Today the loop gathers a day's work on an invented `loop/<date>` branch: workers branch from it,
-`fold` merges them into it, and `close` merges or pushes it once. Her model has no aggregation
-branch, and neither should the loop:
-
-- A unit is a task and its one branch, `type/slug-N`. Its parent is the base when `Depends on:
-  none`, else the branch of the task it depends on. Dependent tasks form a stack.
-- Landing is continuous. A unit whose verdict is recorded for its head and whose parent has
-  landed is merge-ready. Locally the owner merges it into the base; on GitHub it is one pull
-  request, the root targeting the base and each child its parent, landed bottom-up.
-- The ledger is per repository, not per day: one row per unit (task, branch, parent, head, verdict),
-  like her `units.tsv` and `ledger.tsv`. `status` shows the frontier (the lowest unlanded unit
-  of each stack).
-- `start`, `day-branch`, `fold`, `close` and `finish` give way to dispatch, verify and land.
-  `dev-loop tasks` and the `docs/tasks/` files stay: they are her units, written down.
-
-This is a design; `skills/loop/scripts/loop.sh` still runs days until that change is made.
+A branch is the only unit of work. A goal gets one ordinary `type/slug` branch cut from the base,
+the rig branch (`dev-loop start <repo> feat/snake-game`). Each task gets a child branch cut from
+it. A child whose check passes merges up into the rig branch; the control seat does that with
+`dev-loop fold`, which also releases the worker's seat. The rig branch reaches the base once, by
+the owner: a local merge, or one pull request. That is her stack with one level, landed by merge
+instead of rebase, which the guard hook refuses. The loop is a way to repeat this until the goal is
+done, not a daily clock.

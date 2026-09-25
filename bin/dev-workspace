@@ -373,8 +373,8 @@ def main():
             if professional(args.cwd, env):
                 parser.exit(2, "Native OpenRig boot writes managed context. Use an external project-world "
                                "directory, not a professional repository checkout.\n")
-            # Its seats would hold the day worktree's tracked guidance files modified, and the
-            # loop folds only into a clean day worktree. Workers get worktrees of their own.
+            # Its seats would hold the rig worktree's tracked guidance files modified, and the
+            # loop folds only into a clean rig worktree. Workers get worktrees of their own.
             if args.runtime == "iztac" and git_common_dir(args.cwd, env) is not None:
                 parser.exit(2, "The iztac control rig works from an engagement folder outside the repository.\n")
         if account_plan is not None:

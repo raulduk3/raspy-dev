@@ -51,7 +51,7 @@ The rules that follow from it:
 - **A project owns its code.** Its checkout, its worktrees and its loop ledger. The only
   agent that writes inside it is a worker seat, in its own worktree, on its own branch.
 - **A rig belongs to one project.** The menu names it `iztac-<project>`. Its control seat
-  and overseer work from an engagement folder outside the repository, so the day branch
+  and overseer work from an engagement folder outside the repository, so the rig branch
   stays clean. One running rig per project.
 - **A seat belongs to one rig.** OpenRig enforces this: a seat is one tmux session with one
   owner. What crosses rigs is everything above a seat. Any seat in any rig can run as any
@@ -84,7 +84,7 @@ On disk:
 
 ```
 ~/Dev/<project>/                          a project's checkout
-  .claude/worktrees/day-<date>/           the loop's day branch
+  .claude/worktrees/rig-<type>-<slug>/     a goal's rig branch
   .claude/worktrees/loop-<N>-<slug>/      one issue's branch; its worker seat works here
 ~/.claude  ~/.codex                       the two default homes
 ~/.config/dev-platform/                   accounts.json, repos.conf, personal.conf
