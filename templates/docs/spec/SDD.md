@@ -17,14 +17,14 @@ What the software must do, stated as requirements a reader can verify.
 
 - "must" states a requirement.
 - "must not" states a prohibition.
-- No other word makes a requirement. A proposal that is not decided is a GitHub issue and does not appear here.
+- No other word makes a requirement. A proposal that is not decided is a decision record with `Status: proposed` under `docs/decisions/` (or a `decision` issue where the repository uses an issue tracker) and does not appear here.
 
 ## Conventions
 
 - Each requirement is one sentence on a `**XX-nn.**` line: a two-letter area code and a two-digit number.
 - A trace comment follows it: `<!-- id: SDD-XX-nn | tdd: TDD-x.y.z | status: ... -->`.
 - Bullets follow the trace comment: `Trigger`, `Behavior`, `Observable`, `On failure`, `Verified by`, and `Limits` where numbers apply.
-- Status is one of `implemented`, `pending:#issue` (decided, not yet implemented) or `deviation:#issue` (the code does not yet meet it).
+- Status is one of `implemented`, `pending:#N` (decided, not yet implemented) or `deviation:#N` (the code does not yet meet it), where `#N` is the task in `docs/tasks/` (or the issue) that carries the work.
 
 Example, not part of the specification:
 

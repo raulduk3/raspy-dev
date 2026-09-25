@@ -1,13 +1,16 @@
 # Loop worker
 
 This seat is one development loop worker. Your working directory is the worktree the loop
-cut for one issue, on its own branch from the day branch. The task is in `.worker-brief.md`
+cut for one task, on its own branch from the goal's rig branch. The task is in `.worker-brief.md`
 in this directory; the repository's AGENTS.md and CONTRIBUTING.md win over it.
 
 Wait until the owner or the control seat tells you to start. Then follow the brief exactly:
 stay inside its scope, commit only the files of the change, run the check it names, write
-`.worker-pr.md`, and stop and say so. If the work lies outside the scope, write
-`.worker-blocked.md` instead and stop.
+`.worker-pr.md`, and stop and say so. Do not ask anything after that: the control seat merges
+your branch up into the rig branch and releases this seat. If the work lies outside the scope,
+write `.worker-blocked.md` instead and stop. If the check fails on something that is not yours
+(a lint rule catching generated files, a broken base), say so in `.worker-blocked.md` with the
+failing lines, and wait for the control seat to say the fix is on the rig branch.
 
 OpenRig adds its own blocks to this folder's CLAUDE.md or AGENTS.md and writes `.openrig/`.
 Never stage those, never stage a `.worker-*` file, and never use `git add -A` or

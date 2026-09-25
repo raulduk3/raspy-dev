@@ -1,6 +1,7 @@
 """Every tracked SKILL.md frontmatter parses under a strict YAML parser.
 
 Some agent runtimes reject a plain scalar containing ': ' that others tolerate; quote such values.
+The description is the only text a client reads when deciding to load a skill, so it must be whole.
 """
 import subprocess
 import unittest
@@ -13,7 +14,8 @@ from test_stability import PLATFORM
 def tracked_skills():
     out = subprocess.run(['git', 'ls-files', '*SKILL.md'], cwd=PLATFORM, check=True,
                          text=True, stdout=subprocess.PIPE).stdout
-    return [PLATFORM / line for line in out.splitlines() if line]
+    # vendor/ holds upstream copies as published; bin/pstack-port builds the installed skills from them.
+    return [PLATFORM / line for line in out.splitlines() if line and not line.startswith('vendor/')]
 
 
 class SkillFrontmatterTests(unittest.TestCase):
@@ -36,6 +38,8 @@ class SkillFrontmatterTests(unittest.TestCase):
                 self.assertEqual(data.get('name'), path.parent.name, rel)
                 self.assertIsInstance(data.get('description'), str, rel)
                 self.assertTrue(data['description'].strip(), rel)
+                self.assertFalse(data['description'].rstrip().endswith(('…', '...')),
+                                 f'{rel}: description is truncated')
 
 
 if __name__ == '__main__':

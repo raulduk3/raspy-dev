@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { IZTAC_SKILLS } from './role-resources.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const skill = path.join(repository, 'agents/iztac/skills/iztac-engineering');
@@ -19,17 +20,17 @@ try {
     const loader = new DefaultResourceLoader({cwd:root, agentDir:path.join(root,'config'),
       settingsManager:SettingsManager.inMemory(), noExtensions:true, noSkills:true,
       noContextFiles:true, noPromptTemplates:true, noThemes:true,
-      additionalSkillPaths:agent==='iztac'?[skill]:[]});
+      additionalSkillPaths:agent==='iztac'?IZTAC_SKILLS.map(p=>path.join(repository,p)):[]});
     await loader.reload();
     const loaded = loader.getSkills();
     assert.deepEqual(loaded.diagnostics, []);
-    assert.deepEqual(loaded.skills.map(s=>s.name),agent==='iztac'?['iztac-engineering']:[]);
+    assert.deepEqual(loaded.skills.map(s=>s.name).sort(),agent==='iztac'?['distill','intake','iztac-engineering','new-repo']:[]);
     assert.deepEqual(loader.getAgentsFiles().agentsFiles,[]);
     results.push({agent,skills:loaded.skills.map(s=>s.name)});
   }
   const body = fs.readFileSync(path.join(skill,'SKILL.md'),'utf8');
-  const links = [...body.matchAll(/\]\((references\/[^)]+)\)/g)].map(m=>m[1]);
-  assert.equal(links.filter(p=>p.startsWith('references/principles/')).length,23);
+  const links = [...body.matchAll(/\]\(((?:references\/|\.\.\/\.\.\/\.\.\/\.\.\/skills\/principle-)[^)]+)\)/g)].map(m=>m[1]);
+  assert.equal(links.filter(p=>p.includes('/skills/principle-')).length,23);
   for (const relative of links) assert(fs.statSync(path.join(skill,relative)).isFile(),relative);
   console.log(JSON.stringify({passed:true,results,referenceFiles:links.length,
     scope:'Actual Pi resource loader with isolated fixtures; no inference, authentication, or production launcher tested.'},null,2));

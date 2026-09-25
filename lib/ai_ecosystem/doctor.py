@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 
-COMMANDS = ('claude', 'codex', 'openclaw', 'code', 'gh', 'git', 'jq', 'python3', 'laya-decide')
+COMMANDS = ('claude', 'codex', 'code', 'gh', 'git', 'jq', 'python3', 'laya-decide')
 SKILL_DIRS = ('.claude/skills', '.codex/skills', '.agents/skills')
 LAYA_LABEL = 'dev.raspy.laya'
 LAYA_PROBE = {

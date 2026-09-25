@@ -8,6 +8,10 @@ import { journalExtension } from './journal-tool.mjs';
 import { harvestExtension } from './harvest-tool.mjs';
 import { webFetchExtension } from './web-fetch-tool.mjs';
 
+// Iztac's skills, by path: its engineering mode, and the platform skills that take a project from
+// a goal to a specification and tasks. Discovery stays off; these are loaded explicitly.
+export const IZTAC_SKILLS = ['agents/iztac/skills/iztac-engineering', 'skills/new-repo', 'skills/intake', 'skills/distill'];
+
 export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive, memoryState, journalRoot, extensionFactories = [] }) {
   const { agent, scope, binding } = conversation;
   if (!['morty','iztac','neo'].includes(agent)) throw new Error('Unknown agent role');
@@ -35,7 +39,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
   }
   const identity = {path:identityFile,content:fs.readFileSync(identityFile,'utf8')};
   // Startup guidance must be in context, not merely available for skill discovery.
-  const entryPath = path.join(platformRoot,'skills/session-entry/SKILL.md');
+  const entryPath = path.join(platformRoot,'skills/develop/SKILL.md');
   const entry = {path:entryPath,content:fs.readFileSync(entryPath,'utf8')};
   // The role's own memory index rides in context so it starts oriented; the daily
   // corpus and the inherited records stay behind the agent_memory tool.
@@ -58,7 +62,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
       // Hours and invoices belong to the personal role alone.
       ...(agent === 'morty' ? [harvestExtension({agent})] : []), ...extensionFactories],
     noContextFiles:!project,
-    additionalSkillPaths:agent==='iztac'?[path.join(platformRoot,'agents/iztac/skills/iztac-engineering')]:[],
+    additionalSkillPaths:agent==='iztac'?IZTAC_SKILLS.map(p=>path.join(platformRoot,p)):[],
     agentsFilesOverride:base=>({agentsFiles:[entry,identity,...(memory?[memory]:[]),...(project?base.agentsFiles:[])]}),
   });
   await loader.reload();

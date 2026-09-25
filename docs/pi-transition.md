@@ -1,6 +1,6 @@
 # Pi ecosystem transition
 
-Status: implementation in progress. OpenClaw remains available. No retirement is authorized by a successful component check alone.
+Status: OpenClaw is retired (owner, 2026-09-24): it is no longer used, and Morty, Iztac and Neo run in Pi. Its records stay preserved read-only. The acceptance list below is kept as the migration record.
 
 Priority correction: session ownership, scope and filesystem continuity come first. Follow [Shared session contract](session-context-contract.md) before expanding agent launches. Morty is personal and project-independent; Iztac requires a project or formation workspace; Neo starts with explicit system or project scope. Authentication alone is not readiness to migrate.
 
@@ -45,7 +45,7 @@ The host account service now has native launch support. Both providers’ comple
 
 `integrations/pi/role-resources.mjs` is the reusable resource-loading component for the future account-bound launcher. It consumes an already validated conversation, absolute conversation/platform/auth/identity paths, and returns explicit cwd, Pi resources, in-memory settings and the conversation's native session directory.
 
-Personal Morty and system Neo use a neutral workspace within the conversation home and load no repository context. Project/formation Iztac and project Neo use the bound workspace and Pi's repository-context discovery. All roles load shared session-entry guidance and their explicitly supplied identity file; only Iztac receives the engineering skill. Automatic extensions, skills, prompt templates and themes are disabled. The Perplexity extension is explicitly loaded. `ai-role launch` reads its key from the login Keychain item `dev-platform-perplexity` and passes it only in the Pi process environment; live search remains unverified until that item exists. Every role also loads `web_fetch` (`integrations/pi/web-fetch-tool.mjs`): a keyless reader for one public page, which refuses local and private addresses at each redirect hop.
+Personal Morty and system Neo use a neutral workspace within the conversation home and load no repository context. Project/formation Iztac and project Neo use the bound workspace and Pi's repository-context discovery. All roles load shared `/develop` guidance and their explicitly supplied identity file; only Iztac receives the engineering skill. Automatic extensions, skills, prompt templates and themes are disabled. The Perplexity extension is explicitly loaded. `ai-role launch` reads its key from the login Keychain item `dev-platform-perplexity` and passes it only in the Pi process environment; live search remains unverified until that item exists. Every role also loads `web_fetch` (`integrations/pi/web-fetch-tool.mjs`): a keyless reader for one public page, which refuses local and private addresses at each redirect hop.
 
 Pass `historyArchive` as an absolute preservation-directory path to expose the
 `agent_history` tool. The embedded tool binds the role from the conversation,
@@ -133,7 +133,7 @@ the Python exec launcher must acquire the actual OS lock first.
 
 `python3 -B integrations/pi/check-role-terminal.py` performs that real exec/PTY
 chain with a temporary home, empty auth store, explicit offline mode and no
-prompts. It observes native rendering of the session-entry context, role workspace
+prompts. It observes native rendering of the `/develop` context, role workspace
 and Perplexity extension, exits with native Ctrl+D, then reacquires the same lock.
 The check invokes the actual terminal implementation rather than a fake terminal.
 

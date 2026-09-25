@@ -98,9 +98,8 @@ configuration contract (expand the root to an absolute path):
 Preserve any unrelated approved file roots when applying the two list settings;
 never broaden them to the whole home directory. Inspect existing configuration
 first and do not run blanket `rig setup` as an upgrade. These settings select a
-manual, local-only control surface; they do not re-enable disabled OpenClaw or
-system schedules. An existing daemon must have been started with the user's
-native harness configuration, not an OpenClaw-managed Codex home.
+manual, local-only control surface; they do not enable system schedules. An existing
+daemon must have been started with the user's native harness configuration.
 
 ## Owner-facing entry
 
@@ -151,7 +150,7 @@ see `docs/rig-working-branches.md`.
 
 The launcher removes inherited `CODEX_HOME` and `CODEX_THREAD_ID` from its child
 environment so standalone Codex uses its native personal store. It does not
-rewrite either store or migrate OpenClaw-owned conversations. An already running
+rewrite either store or migrate preserved OpenClaw conversations. An already running
 daemon retains its own environment; changing a caller cannot repair that daemon.
 
 ## Native tool access from coding sessions
@@ -161,8 +160,7 @@ shell sandbox intact; do not enable blanket network access to fix that symptom.
 OpenRig provides its own stdio MCP server, which the harness can launch through
 its supported MCP configuration. Inspect existing MCP registrations first; keep
 an existing correct `openrig` registration instead of creating a duplicate.
-Register in the personal harness configuration, not an OpenClaw-managed Codex
-home or a product repository:
+Register in the personal harness configuration, not a product repository:
 
 ```sh
 codex mcp add openrig -- "$HOME/.local/bin/rig" mcp serve

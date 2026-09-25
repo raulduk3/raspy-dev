@@ -51,7 +51,7 @@ The rules that follow from it:
 - **A project owns its code.** Its checkout, its worktrees and its loop ledger. The only
   agent that writes inside it is a worker seat, in its own worktree, on its own branch.
 - **A rig belongs to one project.** The menu names it `iztac-<project>`. Its control seat
-  and overseer work from an engagement folder outside the repository, so the day branch
+  and overseer work from an engagement folder outside the repository, so the rig branch
   stays clean. One running rig per project.
 - **A seat belongs to one rig.** OpenRig enforces this: a seat is one tmux session with one
   owner. What crosses rigs is everything above a seat. Any seat in any rig can run as any
@@ -84,7 +84,7 @@ On disk:
 
 ```
 ~/Dev/<project>/                          a project's checkout
-  .claude/worktrees/day-<date>/           the loop's day branch
+  .claude/worktrees/rig-<type>-<slug>/     a goal's rig branch
   .claude/worktrees/loop-<N>-<slug>/      one issue's branch; its worker seat works here
 ~/.claude  ~/.codex                       the two default homes
 ~/.config/dev-platform/                   accounts.json, repos.conf, personal.conf
@@ -141,26 +141,29 @@ folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
 
 | Where skills come from | What |
 | --- | --- |
-| The platform release, `skills/` | `bounded-decisions`, `deploy-verify`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `session-entry`, `spec-lint`, `staging-census` |
+| The platform release, `skills/` | `bounded-decisions`, `development-workspace`, `distill`, `intake`, `loop`, `new-repo`, `/develop`, `spec-lint`; `deploy-verify` and `staging-census` are marked deprecated (see `docs/skills-audit.md`) |
+| pstack (`vendor/pstack`, ported by `bin/pstack-port`) | `/dev-plat`, its routed skills and the 23 `principle-*` skills; see `docs/pstack-platform.md` |
 | Iztac's own resources | `iztac-engineering`, loaded only into Iztac's Pi sessions |
 | OpenRig | `openrig-skills`, vendored into the default Claude home and the shared folder |
 | The clients themselves | Claude desktop's synced skills; Codex's own |
 
 | Runs as | Platform skills it sees |
 | --- | --- |
-| `anthropic-gmail` (`~/.claude`) | All ten |
-| `openai-apple` (`~/.codex`) | All ten |
+| `anthropic-gmail` (`~/.claude`) | All of them |
+| `openai-apple` (`~/.codex`) | All of them |
 | `anthropic-apple` (isolated) | None. Only Claude desktop's synced skills. |
 | `openai-gmail` (isolated) | None |
 | An OpenRig seat | Whatever its account's home has, plus any `skill_install` in its agent. The platform's agents install none. |
-| Morty, Neo, Iztac (Pi) | Skill discovery is off. Session entry arrives as instructions; Iztac also gets its engineering skill. |
+| Morty, Neo, Iztac (Pi) | Skill discovery is off. `/develop` arrives as instructions; Iztac also gets `iztac-engineering`, `new-repo`, `intake` and `distill`. |
 
 Two consequences. A seat or session on an isolated account does not have `loop`,
 `development-workspace` or the others as skills; session entry still reaches it, because its
 instructions point at the default home's copy. And a link names a folder, so a link into
 `releases/<commit>/skills/` keeps an agent on that release after a newer one is activated.
 Link each platform skill to `~/.local/share/dev-platform/current/skills/<name>` so it follows
-activation; `ai-env doctor` reports a link into any other release as `stale`.
+activation; `ai-env doctor` reports a link into any other release as `stale`. The pstack skills
+are linked the same way, one link per name in `integrations/pstack/ported.txt`. Which skill
+serves which use case is in `docs/skills-audit.md` and `docs/pstack-platform.md`.
 
 ## Every tool, and how they connect
 
@@ -307,9 +310,9 @@ page cannot point it at services on this machine.
   own space, and adds the per-seat `config_home`
   field. Stock 0.5.14 is parked beside it. Undo: swap the two `app` directories and restart
   the daemon. Provenance and the upstream contribution notes are in the migration workspace.
-- **The daemon runs outside OpenClaw.** It used to inherit OpenClaw's environment, including
-  a proxy URL that no longer exists. It now starts from a clean environment. Undo: nothing to
-  undo; starting it from an OpenClaw shell would reintroduce the problem.
+- **The daemon starts from a clean environment.** It used to inherit the retired OpenClaw's
+  environment, including a proxy URL that no longer exists. Undo: nothing to undo; starting it
+  from a shell that carries provider or proxy overrides would reintroduce the problem.
 - **The tmux server was scrubbed.** Its global environment carried that same dead proxy, so
   every new seat inherited it. The launcher now removes such variables before every start,
   and `ai-env doctor` reports them.

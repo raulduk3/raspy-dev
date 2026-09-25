@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as directory:
                 output += chunk
                 # Native resource startup display proves the actual role tool loaded.
                 if not sent and all(marker in output for marker in
-                                    (b'integrations/pi/perplexity', b'session-entry', b'~/workspace')):
+                                    (b'integrations/pi/perplexity', b'skills/develop/', b'~/workspace')):
                     os.write(fd, b'\x04')  # native Ctrl+D on an empty editor
                     sent = True
             done, status = os.waitpid(pid, os.WNOHANG)

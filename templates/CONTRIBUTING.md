@@ -11,6 +11,10 @@ This is the working policy for the repository. It applies to people and to autom
 
 Commit messages use `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`. Commits and changed source lines carry no process words, people, tools, models, sessions or run identifiers; `bun run check` enforces it.
 
+## Tasks
+
+Planned work lives in `docs/tasks/`, one file per task, as that folder's README describes. A task file carries the request, its `Scope:` and its `Depends on:`, and moves to `docs/tasks/done/` when its change is merged. A repository that also uses an issue tracker says so here.
+
 ## What gates a merge
 
 - `bun run check` on the exact PR head: typecheck, lint, format, hygiene and the test suite. CI runs the same commands.
@@ -31,4 +35,4 @@ Deploys, restarts, credential rotation and destructive history operations requir
 
 ## Decisions
 
-An accepted decision that changes behavior gets a record under `docs/decisions/`, from `0000-template.md`, citing its issue and the pull requests that carried it.
+An accepted decision that changes behavior gets a record under `docs/decisions/`, from `0000-template.md`, citing its task or issue and the changes that carried it.

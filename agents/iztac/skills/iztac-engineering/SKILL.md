@@ -50,30 +50,30 @@ Finish with the observed result, verification scope and remaining work. Keep the
 
 ## Principle index
 
-These are steering names, not 23 additional global tools. Each link contains the adapted full rule. Mention a principle only when it explains a concrete decision, not as a ritual checklist.
+These are steering names, not 23 additional global tools. Each link is pstack's full principle skill, shared with every other engineering session on this platform. Mention a principle only when it explains a concrete decision, not as a ritual checklist.
 
-- [laziness-protocol](references/principles/laziness-protocol.md): Solve the complete problem with the fewest maintained parts.
-- [foundational-thinking](references/principles/foundational-thinking.md): Choose ownership and data shape before wiring components.
-- [redesign-from-first-principles](references/principles/redesign-from-first-principles.md): Treat the accepted requirement as part of the original design.
-- [attack-the-premise](references/principles/attack-the-premise.md): After repeated failure, test the assumption shared by the fixes.
-- [subtract-before-you-add](references/principles/subtract-before-you-add.md): Retire unused behavior before adding its replacement.
-- [minimize-reader-load](references/principles/minimize-reader-load.md): Make the next decision understandable without tracing several wrappers.
-- [outcome-oriented-execution](references/principles/outcome-oriented-execution.md): Measure progress against the requested end state.
-- [experience-first](references/principles/experience-first.md): Optimize the workflow Ricky actually uses.
-- [exhaust-the-design-space](references/principles/exhaust-the-design-space.md): Compare concrete alternatives when the choice is consequential and unresolved.
-- [build-the-lever](references/principles/build-the-lever.md): Keep a rerunnable tool for substantial mechanical work or verification.
-- [model-the-domain](references/principles/model-the-domain.md): Represent the real concepts and allowed transitions directly.
-- [boundary-discipline](references/principles/boundary-discipline.md): Parse and validate where external data enters.
-- [type-system-discipline](references/principles/type-system-discipline.md): Represent mutually exclusive states explicitly.
-- [make-operations-idempotent](references/principles/make-operations-idempotent.md): Design retries to recover from partial execution.
-- [migrate-callers-then-delete-legacy-apis](references/principles/migrate-callers-then-delete-legacy-apis.md): Move internal callers and remove the obsolete API in the same planned change.
-- [separate-before-serializing-shared-state](references/principles/separate-before-serializing-shared-state.md): Give independent workers independent write locations.
-- [prove-it-works](references/principles/prove-it-works.md): Run the user-visible behavior on the actual candidate.
-- [fix-root-causes](references/principles/fix-root-causes.md): Reproduce the failure and trace its cause before fixing it.
-- [sequence-verifiable-units](references/principles/sequence-verifiable-units.md): Order work so each verified result supports the next.
-- [test-behavior-not-implementation](references/principles/test-behavior-not-implementation.md): Exercise the real interface and assert an observable result.
-- [guard-the-context-window](references/principles/guard-the-context-window.md): Load the current task and relevant evidence, not the whole archive.
-- [never-block-on-the-human](references/principles/never-block-on-the-human.md): Complete authorized reversible work without routine permission pauses.
-- [encode-lessons-in-structure](references/principles/encode-lessons-in-structure.md): Turn repeated verified corrections into a mechanism.
+- [laziness-protocol](../../../../skills/principle-laziness-protocol/SKILL.md): Solve the complete problem with the fewest maintained parts.
+- [foundational-thinking](../../../../skills/principle-foundational-thinking/SKILL.md): Choose ownership and data shape before wiring components.
+- [redesign-from-first-principles](../../../../skills/principle-redesign-from-first-principles/SKILL.md): Treat the accepted requirement as part of the original design.
+- [attack-the-premise](../../../../skills/principle-attack-the-premise/SKILL.md): After repeated failure, test the assumption shared by the fixes.
+- [subtract-before-you-add](../../../../skills/principle-subtract-before-you-add/SKILL.md): Retire unused behavior before adding its replacement.
+- [minimize-reader-load](../../../../skills/principle-minimize-reader-load/SKILL.md): Make the next decision understandable without tracing several wrappers.
+- [outcome-oriented-execution](../../../../skills/principle-outcome-oriented-execution/SKILL.md): Measure progress against the requested end state.
+- [experience-first](../../../../skills/principle-experience-first/SKILL.md): Optimize the workflow Ricky actually uses.
+- [exhaust-the-design-space](../../../../skills/principle-exhaust-the-design-space/SKILL.md): Compare concrete alternatives when the choice is consequential and unresolved.
+- [build-the-lever](../../../../skills/principle-build-the-lever/SKILL.md): Keep a rerunnable tool for substantial mechanical work or verification.
+- [model-the-domain](../../../../skills/principle-model-the-domain/SKILL.md): Represent the real concepts and allowed transitions directly.
+- [boundary-discipline](../../../../skills/principle-boundary-discipline/SKILL.md): Parse and validate where external data enters.
+- [type-system-discipline](../../../../skills/principle-type-system-discipline/SKILL.md): Represent mutually exclusive states explicitly.
+- [make-operations-idempotent](../../../../skills/principle-make-operations-idempotent/SKILL.md): Design retries to recover from partial execution.
+- [migrate-callers-then-delete-legacy-apis](../../../../skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md): Move internal callers and remove the obsolete API in the same planned change.
+- [separate-before-serializing-shared-state](../../../../skills/principle-separate-before-serializing-shared-state/SKILL.md): Give independent workers independent write locations.
+- [prove-it-works](../../../../skills/principle-prove-it-works/SKILL.md): Run the user-visible behavior on the actual candidate.
+- [fix-root-causes](../../../../skills/principle-fix-root-causes/SKILL.md): Reproduce the failure and trace its cause before fixing it.
+- [sequence-verifiable-units](../../../../skills/principle-sequence-verifiable-units/SKILL.md): Order work so each verified result supports the next.
+- [test-behavior-not-implementation](../../../../skills/principle-test-behavior-not-implementation/SKILL.md): Exercise the real interface and assert an observable result.
+- [guard-the-context-window](../../../../skills/principle-guard-the-context-window/SKILL.md): Load the current task and relevant evidence, not the whole archive.
+- [never-block-on-the-human](../../../../skills/principle-never-block-on-the-human/SKILL.md): Complete authorized reversible work without routine permission pauses.
+- [encode-lessons-in-structure](../../../../skills/principle-encode-lessons-in-structure/SKILL.md): Turn repeated verified corrections into a mechanism.
 
-Adapted from cursor/plugins pstack at commit `12d587dfb20741cafc376c42c696c5f6e2a64487`, including guide chapters 1–10. The workflow and wording here are specific to Ricky’s system; Cursor model settings, orchestration stores, timers and merge authority are not imported.
+The routes and workflows were adapted from cursor/plugins pstack at commit `12d587dfb20741cafc376c42c696c5f6e2a64487`. The principles are now pstack's own skills (`vendor/pstack`, ported by `bin/pstack-port`); `docs/pstack-platform.md` maps her tool names to this platform, and `skills/dev-plat/` holds her full playbooks. The workflow and wording here are specific to Ricky’s system; Cursor model settings, orchestration stores, timers and merge authority are not imported.

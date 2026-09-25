@@ -51,7 +51,7 @@ automatically for any role whose state root exists.
 
 `ai-role` derives memory from the role; there is no flag to forget. The live
 `MEMORY.md` is injected into the launch context beside the identity and the
-session-entry guidance, so the role starts oriented. The daily corpus and the
+`/develop` guidance, so the role starts oriented. The daily corpus and the
 inherited records stay behind the tool and are retrieved only when relevant.
 `ai-role plan` reports the entry count, the roots, and the size of the index it
 will put in context, because that index is not free: Iztac's is about 26 KB.

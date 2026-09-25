@@ -329,12 +329,43 @@ def pick_account(client):
     return choose(f"Which {CLIENT[client]} account?", items)
 
 
-def open_client(project, client):
+def open_client(project, client, prompt=None):
+    """Open a client in the project; with prompt, it starts the conversation with that request."""
     account = pick_account(client)
     if account:
         run(tool("ai-environment") + ["run", "--client", client, "--provider", PROVIDER[client],
                                       "--preferred-account", account, "--allow-unknown-quota",
-                                      "--cwd", project["root"]])
+                                      "--cwd", project["root"]] + ([prompt] if prompt else []))
+
+
+SPEC_PROMPT = ("Use the intake skill to spec out this project from zero. The goal: {goal}. Write the first "
+               "decision for me to accept, then the first requirements in docs/spec and the first task files "
+               "with dev-loop tasks, on a docs/ branch. Stop when the spec branch is ready for me to merge.")
+
+
+def new_project():
+    """A goal in plain words becomes a local repository, registered for the loop, with a client
+    already asked to write its specification."""
+    answer = ask("Project name (a folder in ~/Dev): ")
+    if not answer:
+        return
+    project_name = slug(answer)
+    folder = Path(DEV_ROOT) / project_name
+    if folder.exists():
+        note(f"{folder} already exists. Open it from Projects instead.")
+        return
+    goal = ask("What do you want to build? ")
+    if run([str(ROOT / "bin/new-repo"), folder, "--register", "--personal"], pause=True) != 0 and not DRY:
+        return
+    project = next((p for p in catalog() if Path(p["root"]).resolve() == folder.resolve()), None)
+    if project is None:
+        note(f"{folder} was created but is not in repos.conf; open it from Projects.")
+        return
+    if goal:
+        client = choose("Who writes the spec?", [("Claude", "claude"), ("Codex", "codex")])
+        if client:
+            open_client(project, client, SPEC_PROMPT.format(goal=goal))
+    project_menu(project)
 
 
 def accounts_menu():
@@ -741,7 +772,7 @@ def worker_seat(project, team, action):
         run(tool("dev-workspace") + ["remove-worker", "--rig", team, "--cwd", folder], pause=True)
         issue = re.match(r"loop-(\d+)-", folder.name)
         if issue and project["repo"]:
-            note(f"Folding stays your own step. When you have read the diff, run:\n"
+            note(f"Folding releases the seat itself; to merge it up into the goal's branch, run:\n"
                  f"  dev-loop fold {project['repo']} {issue.group(1)}")
         return
     client = choose("Which agent?", [("Claude", "claude"), ("Codex", "codex")])
@@ -753,22 +784,171 @@ def worker_seat(project, team, action):
 
 # Loop -----------------------------------------------------------------------------------
 
+LOOP = ROOT / "skills/loop/scripts/loop.sh"
+
+
+def dev_loop(project, verb, *args):
+    """The loop script itself. Its owner verbs (land, finish, tidy --apply) run here because
+    this menu is the owner's terminal; the script still refuses them from an agent."""
+    return [str(LOOP), verb, project["repo"], *args]
+
+
+def loop_state(project):
+    return read_json(dev_loop(project, "state")) or {}
+
+
+def team_running(team):
+    return team in {r.get("rigName") or r.get("name") for r in rigs()}
+
+
 def loop_menu(project):
+    """One goal at a time: its branch, each worker's branch under it, and every lever."""
     team = team_for(project)
-    verbs = [("Status", "status"), ("Plan the day", "plan"), ("Start the day", "start"),
-             ("Dispatch workers in the background", "go"),
-             (f"Dispatch workers as seats in {team}", "seats"),
-             ("Pause dispatch", "pause"), ("Cycle report", "collect")]
-    hint = (f"Folding and closing stay your own steps: dev-loop fold {project['repo']} <issue>, "
-            f"dev-loop close {project['repo']}")
-    while (verb := choose(f"Development loop · {project['repo']}", verbs, hint)) is not None:
-        if verb == "seats":
-            if team not in {r.get("rigName") or r.get("name") for r in rigs()}:
+    local = project.get("mode") == "local"
+    while True:
+        state = loop_state(project)
+        rig, tip = state.get("rig"), state.get("base_tip") or state.get("base") or "the base"
+        items = []
+        if rig:
+            title = f"{project['repo']} · {rig} · {state.get('ahead', '?')} ahead of {tip}"
+            items += [(f"#{w['issue']} {w['branch']} · {w['state']}" + (f" · seat in {w['seat']}" if w.get("seat") else ""),
+                       ("worker", w)) for w in state.get("workers", [])]
+            items += [("Dispatch ready tasks in the background", "go"),
+                      (f"Dispatch ready tasks as seats in {team}", "seats"),
+                      ("Pause dispatch", "pause"),
+                      (f"Show everything on {rig}", "diff"),
+                      ("Watch it in VS Code", "watch"),
+                      (f"Land {rig}: merge it into {state.get('base')}" if local
+                       else f"Land {rig}: push it and open the pull request", "land")]
+            if not local:
+                items.append(("Finish after the pull request merged", "finish"))
+            hint = "Workers merge up into the goal's branch. Landing it on the base is your step."
+        else:
+            title = f"{project['repo']} · no goal branch open"
+            items.append(("Start a branch for a goal", "start"))
+            hint = f"Last landed: {state['last_rig']}." if state.get("last_rig") else "A goal gets one branch; workers branch from it."
+        specs = spec_branches(project, state.get("base"))
+        if specs:
+            items.append((f"Merge a spec branch into {state.get('base')} ({len(specs)} ready)", "spec"))
+        items += [("Status", "status"), ("Plan", "plan"), ("Cycle report", "collect")]
+        if local:
+            items.append(("Tasks", "tasks"))
+        items.append(("Tidy merged branches and worktrees", "tidy"))
+        pick = choose(title, items, hint)
+        if pick is None:
+            return
+        if isinstance(pick, tuple):
+            worker_menu(project, state, pick[1], team)
+        elif pick == "seats":
+            if not team_running(team):
                 note(f"Start {team} first, under This project's team.")
                 continue
             run(tool("ai-work") + ["loop", project["id"], "go"], extra={"LOOP_SEAT_RIG": team}, pause=True)
+        elif pick == "start":
+            branch = ask("Branch for this goal (type/slug, for example feat/snake-game): ")
+            if branch:
+                run(tool("ai-work") + ["loop", project["id"], "start", branch], pause=True)
+        elif pick == "diff":
+            run(["git", "-C", project["root"], "diff", f"{tip}...{rig}"])
+        elif pick == "watch":
+            folders = [state.get("worktree")] + [w["worktree"] for w in state.get("workers", [])]
+            run(["code", "-n", *[f for f in folders if f]])
+        elif pick == "spec":
+            merge_spec_branch(project, state.get("base"), specs)
+        elif pick == "land":
+            if confirm(f"Land {rig} on {state.get('base')}?"):
+                run(dev_loop(project, "close", "--merge" if local else "--push"), pause=True)
+        elif pick == "finish":
+            pr = ask("Pull request number: ")
+            if pr.isdigit():
+                run(dev_loop(project, "finish", pr), pause=True)
+        elif pick == "tasks":
+            tasks_menu(project)
+        elif pick == "tidy":
+            run(dev_loop(project, "tidy"), pause=False)
+            if confirm("Delete what is listed? Every ref is bundled first."):
+                run(dev_loop(project, "tidy", "--apply"), pause=True)
         else:
-            run(tool("ai-work") + ["loop", project["id"], verb], pause=True)
+            run(tool("ai-work") + ["loop", project["id"], pick], pause=True)
+
+
+def spec_branches(project, base):
+    """docs/ branches with work not yet on the base: what intake leaves for the owner to merge."""
+    if not base:
+        return []
+    listed = subprocess.run(["git", "-C", project["root"], "for-each-ref", "--format=%(refname:short)",
+                             "refs/heads/docs/"], capture_output=True, text=True).stdout.split()
+    return [b for b in listed if subprocess.run(["git", "-C", project["root"], "rev-list", "--count", f"{base}..{b}"],
+                                                capture_output=True, text=True).stdout.strip() not in ("", "0")]
+
+
+def merge_spec_branch(project, base, specs):
+    branch = choose("Which spec branch?", [(b, b) for b in specs], "Read it first: its diff opens before merging.")
+    if branch is None:
+        return
+    current = subprocess.run(["git", "-C", project["root"], "branch", "--show-current"],
+                             capture_output=True, text=True).stdout.strip()
+    if current != base and not DRY:
+        note(f"The checkout is on {current}; switch it to {base} first.")
+        return
+    run(["git", "-C", project["root"], "diff", f"{base}...{branch}"])
+    if confirm(f"Merge {branch} into {base}?"):
+        run(["git", "-C", project["root"], "merge", "--no-ff", "-m", f"Merge branch '{branch}'", branch], pause=True)
+
+
+def worker_menu(project, state, worker, team):
+    i, branch, folder, seat = str(worker["issue"]), worker["branch"], Path(worker["worktree"]), worker.get("seat")
+    summary = folder / (".worker-blocked.md" if worker["state"] == "blocked" else ".worker-pr.md")
+    items = [("Show its diff", "diff")]
+    if summary.is_file():
+        items.append(("Read what it reported", "read"))
+    if seat:
+        items += [("Open its seat", "open"), ("Release its seat", "release")]
+    else:
+        items += [(f"Give it a seat in {team}", "seat"), ("Resume it in the background", "resume")]
+    items.append((f"Merge it up into {state['rig']}", "fold"))
+    while (pick := choose(f"#{i} {branch} · {worker['state']}", items,
+                          "Merging up checks the branch and releases its seat.")) is not None:
+        if pick == "diff":
+            run(["git", "-C", project["root"], "diff", f"{state['rig']}...{branch}"], pause=True)
+        elif pick == "read":
+            run(["cat", summary], pause=True)
+        elif pick == "open":
+            session = f"workers-issue-{i}@{seat}"
+            run(["tmux", "switch-client", "-t", session] if os.environ.get("TMUX") else ["tmux", "attach", "-t", session])
+        elif pick == "release":
+            run(tool("dev-workspace") + ["remove-worker", "--rig", seat, "--cwd", folder], pause=True)
+            return
+        elif pick == "seat":
+            if not team_running(team):
+                note(f"Start {team} first, under This project's team.")
+                continue
+            client = choose("Which agent?", [("Claude", "claude"), ("Codex", "codex")])
+            account = client and pick_account(client)
+            if account:
+                run(tool("dev-workspace") + ["add-worker", client, "--rig", team, "--cwd", folder, "--account", account],
+                    pause=True)
+                return
+        elif pick == "resume":
+            run(dev_loop(project, "resume", i), pause=True)
+            return
+        elif pick == "fold":
+            run(dev_loop(project, "fold", i), pause=True)
+            return
+
+
+def tasks_menu(project):
+    items = [("List the tasks on the base", "list"), ("Check the task files", "check"), ("Write a new task", "new")]
+    while (pick := choose(f"Tasks · {project['repo']}", items, "Tasks are docs/tasks/<N>-<slug>.md files.")) is not None:
+        if pick == "new":
+            title, scope = ask("Title: "), ask("Scope (path prefixes, comma separated): ")
+            if title and scope:
+                depends = ask("Depends on (#N, #M or none): ") or "none"
+                ready = ["--ready"] if confirm("Ready for a worker now?") else []
+                run(dev_loop(project, "tasks", "new", title, "--scope", scope, "--depends", depends, *ready),
+                    cwd=project["root"], pause=True)
+        else:
+            run(dev_loop(project, "tasks", pick), cwd=project["root"], pause=True)
 
 
 # Home -----------------------------------------------------------------------------------
@@ -798,7 +978,8 @@ def home():
     while True:
         upgrade_if_released()
         items = [(f"This project: {name(here)}", lambda: project_menu(here))] if here else []
-        items += [("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
+        items += [("Start a new project", new_project),
+                  ("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
                   ("Morty, personal", lambda: role_menu("morty")), ("Neo, this machine", lambda: role_menu("neo")),
                   ("Iztac, on a project", iztac_menu),
                   ("Teams", teams_menu), ("Accounts and setup", accounts_menu)]

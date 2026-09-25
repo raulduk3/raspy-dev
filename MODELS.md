@@ -17,6 +17,8 @@ Rules:
 
 Implementation tier: the loop's default worker model is `LOOP_WORKER_MODEL`, set in `brief.conf` (Sonnet when unset). On a subscription with full availability of the judgment model, set it to `fable` at high effort and keep Sonnet and Codex as explicit choices. Fable at high effort on a simple task does not spend much more than at low, so tiering is a cost lever, not a quality one. The rules above still hold.
 
+pstack's roles: `/setup-pstack` writes `~/.config/dev-platform/pstack-models.md`, one model per role (`feature, refactoring`, `judgment and prose`, the review panels) with an effort token (`sonnet-high`, `fable-max`). pstack's subagents read it, and the loop takes its implementation workers from `feature, refactoring` and its judgment-tier workers from `judgment and prose` (`LOOP_MODEL` still overrides both). Without the file the tiers above apply. See `docs/pstack-platform.md`.
+
 Routing table (fallback order on a quota error; edit here, never improvise):
 
 | Lane | First | Then | Then |

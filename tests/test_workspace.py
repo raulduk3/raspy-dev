@@ -64,6 +64,14 @@ class Workspace(unittest.TestCase):
                            runtime='claude', owner='user', status='unknown', updated_at=name))
         return sid
 
+    def test_a_local_repository_is_a_loop_project_with_its_mode(self):
+        self.config.write_text(f'owner/project\t{self.repo}\tlocal\tdevelop\n')
+        project = next(p for p in self.projects() if p['repo'] == 'owner/project')
+        self.assertTrue(project['loop_enabled'])
+        self.assertEqual(project['mode'], 'local')
+        self.config.write_text(f'owner/project\t{self.repo}\tgithub\n')
+        self.assertIn('local|owner|bot', self.cli('projects', check=False).stderr)
+
     def test_group_real_linked_worktrees_and_preserve_distinct_repositories(self):
         worktree = self.base / 'different-name'
         self.run_command(['git', '-C', self.repo, 'worktree', 'add', '-q', '-b', 'feature', worktree])
@@ -143,6 +151,8 @@ class Workspace(unittest.TestCase):
         direct = self.run_command([PLATFORM / 'skills/loop/scripts/loop.sh', 'status', 'owner/project'])
         self.assertIn('steer: pause', direct.stdout)
         (ledger / 'dispatch-lock').mkdir()
+        self.assertNotEqual(self.cli('loop', 'owner/project', 'start', check=False).returncode, 0)
+        self.assertNotEqual(self.cli('loop', 'owner/project', 'start', 'loop/2026-09-24', check=False).returncode, 0)
         locked = self.cli('loop', 'owner/project', 'go', 'only', '12', check=False)
         self.assertEqual(locked.returncode, 3)
         self.assertIn('another dispatch', locked.stderr)

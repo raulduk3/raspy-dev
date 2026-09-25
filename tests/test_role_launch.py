@@ -222,7 +222,7 @@ class RoleLaunch(unittest.TestCase):
                     except OSError:
                         pass
                 if not sent and all(marker in output for marker in
-                                    (b'perplexity', b'session-entry', b'identity.md', b'[Skills]')):
+                                    (b'perplexity', b'skills/develop/', b'identity.md', b'[Skills]')):
                     os.write(fd, b'\x04')  # native Ctrl+D on an empty editor
                     sent = True
                 done, status = os.waitpid(pid, os.WNOHANG)
