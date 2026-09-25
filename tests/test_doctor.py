@@ -41,9 +41,9 @@ class Doctor(unittest.TestCase):
         return json.loads(run.stdout)
 
     def launch(self, **env):
-        path = self.home / 'Library/LaunchAgents/com.raulduk3.laya.plist'
+        path = self.home / 'Library/LaunchAgents/dev.raspy.laya.plist'
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {'Label': 'com.raulduk3.laya', 'ProgramArguments': ['/local/venv/bin/laya-serve'],
+        data = {'Label': 'dev.raspy.laya', 'ProgramArguments': ['/local/venv/bin/laya-serve'],
                 'EnvironmentVariables': {'LAYA_HOST': '127.0.0.1', 'LAYA_PORT': '18791',
                                          'LAYA_PRELOAD': '1', 'SECRET_ENV': 'DO NOT OUTPUT', **env}}
         path.write_bytes(plistlib.dumps(data))
@@ -109,6 +109,30 @@ class Doctor(unittest.TestCase):
         missing = self.run_doctor()['skills']['.agents/skills']
         self.assertIn('new-only', missing.get('canonical_missing', []) + missing.get('missing', []))
         self.assertNotIn('loop', missing.get('canonical_missing', []))  # the checkout's list no longer applies
+
+    def test_links_into_an_older_release_are_stale_until_they_follow_the_activated_one(self):
+        releases = self.home / '.local/share/dev-platform/releases'
+        for release in ('old', 'new'):
+            (releases / release / 'skills/loop').mkdir(parents=True)
+            (releases / release / 'skills/loop/SKILL.md').write_text(f'# {release} loop\n')
+        current = self.home / '.local/share/dev-platform/current'
+        current.symlink_to(releases / 'new')
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel).mkdir(parents=True)
+            os.symlink(releases / 'old/skills/loop', self.home / rel / 'loop')
+        report = self.run_doctor()['skills']
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            self.assertEqual(report[rel]['state'], 'stale')
+            self.assertEqual(report[rel]['stale'], ['loop'])
+        checkout = self.platform / 'skills/loop'  # the development checkout, not a release
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel / 'loop').unlink()
+            os.symlink(checkout, self.home / rel / 'loop')
+        self.assertEqual(self.run_doctor()['skills']['.agents/skills']['stale'], ['loop'])
+        for rel in ('.agents/skills', '.claude/skills', '.codex/skills'):
+            (self.home / rel / 'loop').unlink()
+            os.symlink(current / 'skills/loop', self.home / rel / 'loop')
+        self.assertTrue(all(item['state'] == 'ok' for item in self.run_doctor()['skills'].values()))
 
     def test_shared_published_override_is_healthy_but_client_drift_is_not(self):
         published = self.home / 'workshop/loop'

@@ -9,7 +9,8 @@
 #     commit --amend, filter-branch;
 #   - merges into develop or main and gh pr merge;
 #   - docker compose up/restart/down/stop, docker restart/stop/kill, systemctl restart/stop;
-#   - ssh as root, and any ssh command that restarts, deploys or stops something.
+#   - ssh as root, and any ssh command that restarts, deploys or stops something;
+#   - writing, chmodding or executing project scripts from ~/Desktop.
 # An operator who needs one of these runs it in a terminal, not through the agent. Set
 # DEV_PLATFORM_ALLOW_MUTATIONS=1 in the agent's environment to lift the ssh and docker rules for a
 # session the owner is driving; the push and merge rules stay.
@@ -65,6 +66,19 @@ if printf '%s' "$flat" | grep -Eq '(^|[;&|] *)git +push\b'; then
   if ! printf '%s' "$flat" | grep -Eq 'git +push[^;&|]*(-u |--set-upstream|origin +[a-zA-Z]+/|origin +HEAD|origin +refs/heads/[a-z]+/|refs/heads/[a-z]+/)'; then
     # A bare `git push` follows the branch's upstream, which may be develop or main.
     refuse "bare git push is refused; name the branch: git push -u origin <type/short-description>"
+  fi
+fi
+
+desktop_pattern=""
+if [ -n "${HOME:-}" ]; then
+  home_escaped="$(printf '%s/Desktop' "$HOME" | sed 's/[.[\\*^$()+?{}|]/\\&/g')"
+  desktop_pattern="(~|\\$HOME)/Desktop|$home_escaped"
+fi
+if [ -n "$desktop_pattern" ] && printf '%s' "$flat" | grep -Eq "$desktop_pattern"; then
+  desktop_write_re="(^|[;&|] *)((mkdir|touch|chmod|cp|mv|install|rsync)\b[^;&|]*($desktop_pattern)|(curl|wget)\b[^;&|]*(-o|--output-document=)[^;&|]*($desktop_pattern)|tee\b[^;&|]*($desktop_pattern)|[^;&|>]+>+[^;&|]*($desktop_pattern))"
+  desktop_exec_re="(^|[;&|] *)(bash|sh|zsh|python3?|node|bun|npm|npx|pwsh|osascript) +[^;&|]*($desktop_pattern)[^;&|]*\.(sh|py|js|ts|mjs|cjs|ps1|command|applescript|scpt)\b"
+  if printf '%s' "$flat" | grep -Eq "$desktop_write_re|$desktop_exec_re"; then
+    refuse "engineering scripts do not live on Desktop; use the project worktree or ledger/artifacts directory"
   fi
 fi
 

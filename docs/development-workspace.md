@@ -111,6 +111,13 @@ for generated `.yaml` documents; it is valid YAML accepted by the native catalog
 parser. Project manifests follow the upstream schema and leave skill/context
 selectors empty until a deliberate native installation configures them.
 
+Scratch files follow the selected project boundary. Engineering scripts, probes and generated
+artifacts belong in the current project worktree, the loop worker worktree, or that project's
+ledger or artifacts directory. Desktop apps must not use `~/Desktop`, `~/Downloads` or personal
+notes as a convenience workspace for runnable project files. When the right destination is
+unclear, the session stops and proposes a destination map instead of creating the script in a
+personal holding area.
+
 The sync command does not configure or start OpenRig. Configure its
 `workspace.root` / `workspace.catalog_path` with the native `rig` commands for the
 installed release, and use its native `files.allowlist` for any necessary source

@@ -109,7 +109,7 @@ Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `b
   name matches a platform skill but point somewhere else (divergent). Canonical source is
   `~/Dev/dev-platform`, not the doctor executable’s checkout; override with `--platform-root`;
 - whether `bin/check` exists;
-- Laya: parses `com.raulduk3.laya.plist` with `plistlib`, validating the laya-serve
+- Laya: parses `dev.raspy.laya.plist` with `plistlib`, validating the laya-serve
   entrypoint, loopback host, port 18791, preload enabled, and one matching launch config.
   Checks TCP port 18791 with bounded `lsof`, counting distinct listener PIDs regardless of
   process name (the actual service can be Python). Missing `lsof` is `unverified`.

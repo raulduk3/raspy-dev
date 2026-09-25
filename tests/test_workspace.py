@@ -99,9 +99,9 @@ class Workspace(unittest.TestCase):
         self.assertNotEqual(first, second)
         grouped = self.dev / 'layer7-systems' / 'server'
         self.init_repo(grouped)
-        self.config.write_text(self.config.read_text() + f'Layer-7-Systems/server\t{grouped}\towner\n')
+        self.config.write_text(self.config.read_text() + f'Example-Systems/server\t{grouped}\towner\n')
         projects = self.projects('--dev-root', self.dev)
-        server = next(p for p in projects if p['repo'] == 'Layer-7-Systems/server')
+        server = next(p for p in projects if p['repo'] == 'Example-Systems/server')
         self.assertEqual(server['group'], 'layer7-systems')
         self.cli('--dev-root', self.dev, 'sync-openrig', '--workspace', self.workspace)
         manifest = json.loads((self.workspace / 'projects' / server['id'] / 'project.yaml').read_text())

@@ -1,6 +1,6 @@
 """ai-env doctor: read-only environment diagnostics. Never installs, restarts or edits config.
 
-Each check reports one state: ok, missing, unavailable, unverified, unsupported or broken.
+Each check reports one state: ok, missing, stale, unavailable, unverified, unsupported or broken.
 Output carries names and states only, never credentials or full configuration.
 """
 import argparse
@@ -14,7 +14,7 @@ import sys
 
 COMMANDS = ('claude', 'codex', 'openclaw', 'code', 'gh', 'git', 'jq', 'python3', 'laya-decide')
 SKILL_DIRS = ('.claude/skills', '.codex/skills', '.agents/skills')
-LAYA_LABEL = 'com.raulduk3.laya'
+LAYA_LABEL = 'dev.raspy.laya'
 LAYA_PROBE = {
     'state': 'Read-only diagnostic: choose which small local documentation task to inspect first.',
     'options': {'read_summary': 'Read a short summary.', 'read_details': 'Read the detailed notes.'},
@@ -25,8 +25,18 @@ def check_commands():
     return {c: {'state': 'ok' if shutil.which(c) else 'missing'} for c in COMMANDS}
 
 
+def stale_release(skill, platform, checkout=None):
+    """True when a skill resolves into a release other than the platform's own, or into the
+    development checkout while a release is active: either one stops following activation."""
+    source = skill.resolve().parent.parent
+    if source == platform:
+        return False
+    return source.parent.name == 'releases' or (checkout is not None and source == checkout)
+
+
 def check_skills(home, platform):
     platform_skills = (platform / 'skills').resolve()
+    checkout = (home / 'Dev/dev-platform').resolve()
     expected = {p.parent.name for p in platform_skills.glob('*/SKILL.md') if p.is_file()}
     # The repository declares required names; shared discovery declares the active
     # source. Workshop-published overrides need not live in the repository.
@@ -52,10 +62,16 @@ def check_skills(home, platform):
                 if source.is_file() and client.is_file() and source.resolve() != client.resolve():
                     divergent.append(name)
         missing = sorted(name for name in expected if not (folder / name / 'SKILL.md').is_file())
+        # A link into another release keeps an agent on skills the activated release replaced.
+        # A Workshop override lives outside releases/ and stays healthy.
+        stale = sorted(name for name in expected if (folder / name / 'SKILL.md').is_file()
+                       and stale_release(folder / name, platform_skills.parent, checkout))
         out[rel] = {'state': 'broken' if broken or divergent else
-                           'missing' if missing or canonical_missing else 'ok',
-                    'broken': broken, 'divergent': divergent, 'missing': missing,
+                           'missing' if missing or canonical_missing else 'stale' if stale else 'ok',
+                    'broken': broken, 'divergent': divergent, 'missing': missing, 'stale': stale,
                     'canonical_missing': canonical_missing}
+        if stale:
+            out[rel]['fix'] = f'link each to {platform}/skills/<name> so it follows the activated release'
     return out
 
 

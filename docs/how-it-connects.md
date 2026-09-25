@@ -95,9 +95,9 @@ On disk:
   openrig-runtime/                        OpenRig, pinned
 ~/.local/state/dev-platform/
   sessions/                               the session index and role conversations
-  engagements/<project>/                  where a project's control seat and overseer work
+  engagements/<project>/                  where a project's team works; a rig.yaml there defines a custom team
   openrig/                                rig specs and worker fragments the launcher writes
-  loop/<owner__repo>/                     the loop ledger
+  loop/<owner__repo>/                     the loop ledger, unless brief.conf's LOOP_STATE_DIR moves it
   usage/                                  Claude usage readings
 ~/.openrig/                               OpenRig's daemon database
 ~/.config/herdr/                          herdr's server socket and saved layout
@@ -154,14 +154,16 @@ folder of the home it runs as: `<home>/skills`, for Claude and Codex alike.
 | `anthropic-apple` (isolated) | None. Only Claude desktop's synced skills. |
 | `openai-gmail` (isolated) | None |
 | An OpenRig seat | Whatever its account's home has, plus any `skill_install` in its agent. The platform's agents install none. |
-| Morty, Neo, Iztac (Pi) | Skill discovery is off. Session entry arrives as instructions; Iztac also gets its engineering skill. |
+| Morty, Neo, Iztac (Pi) | Skill discovery is off. `/develop` arrives as instructions; Iztac also gets `iztac-engineering`, `new-repo`, `intake` and `distill`. |
 
 Two consequences. A seat or session on an isolated account does not have `loop`,
 `development-workspace` or the others as skills; session entry still reaches it, because its
-instructions point at the default home's copy. The default homes' links all point at
-`current/skills/<name>` (checked 2026-09-24), so they follow the activated release. Which skill
-serves which use case, and the proposals for the isolated homes and Pi, are in
-`docs/skills-audit.md`.
+instructions point at the default home's copy. And a link names a folder, so a link into
+`releases/<commit>/skills/` keeps an agent on that release after a newer one is activated.
+Link each platform skill to `~/.local/share/dev-platform/current/skills/<name>` so it follows
+activation; `ai-env doctor` reports a link into any other release as `stale`. The pstack skills
+are linked the same way, one link per name in `integrations/pstack/ported.txt`. Which skill
+serves which use case is in `docs/skills-audit.md` and `docs/pstack-platform.md`.
 
 ## Every tool, and how they connect
 
@@ -268,12 +270,23 @@ Templates deliver their role briefs by typing text into each agent on startup. I
 silent seats, point the members at the platform's own agent, which sends nothing:
 `path:~/.local/share/dev-platform/current/integrations/openrig/agents/control`.
 
+**Give a project its own team.** Put the spec at `engagements/<project>/rig.yaml`, named
+`iztac-<project>`, with its agents beside it as `path:` references and each member's `cwd`
+absolute or relative to that folder. The menu and `dev-workspace start iztac` then start that
+spec instead of the standard control and overseer, and pass no `--cwd`, because `--cwd` would
+override every member's folder. Check it first with `rig spec validate` and `rig up <spec> --plan`.
+
 **Attach to a seat, detach, stop a team.**
 
 ```bash
 tmux attach -t <seat-name>        # Ctrl-b then d to detach
 rig down <rig-name>               # stops every seat, keeps a snapshot
+rig archive <rig-id>              # hides a stopped team; takes the ID from rig ps --json, not the name
 ```
+
+A rig's name is part of every seat's identity, so nothing renames one. To rename a team, stop
+it, archive it if you like, and start a fresh one under the new name. Its conversations stay
+in the account homes and can be resumed from their original folders.
 
 **Give Morty, Neo and Iztac web search.** Their search tool uses Perplexity, and its key
 lives in your login Keychain. Add it once; the command asks for the key without showing it:

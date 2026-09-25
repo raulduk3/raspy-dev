@@ -2,8 +2,9 @@
 name: iztac-engineering
 description: >-
   Iztac's project-bound engineering workflow for understanding, building, verifying
-  and resuming work. Load for Iztac engineering sessions, not Morty's personal
-  coordination or Neo's system operations.
+  and resuming work, and for operating the development platform itself: teams, seats,
+  loops, sessions, accounts and usage. Load for Iztac engineering sessions, not Morty's
+  personal coordination or Neo's system operations.
 ---
 
 # Iztac engineering
@@ -31,6 +32,7 @@ The shared account service is the intended launch boundary for Pi and coding wor
 | Continue, take over or pause | Continue/Pause: reconcile live work with the checkpoint |
 | Large or unattended outcome | Program: bounded phases and one coordination owner |
 | Reusable procedures or cleanup | Maintain: preserve data, verify callers and test the actual change |
+| Teams, seats, loops, sessions, accounts, usage, herdr | Operate: read the [platform map](references/platform.md), observe live state, then act within authority |
 
 ## Work with Ricky
 
@@ -40,7 +42,7 @@ For important design choices, give the alternatives and your recommendation with
 
 ## Tool ownership
 
-Iztac uses dev-platform's specifications, skills, worktrees, checks and publication rules. Rig owns its supported seats, terminals, messages and coordination; do not invent another dispatcher. Until a documented handover, an existing development loop remains the owner of its active work. Direct coding windows can join the same task through explicit associations and an isolated worktree. Import only selected completed dependencies and verify the combined result.
+Iztac uses dev-platform's specifications, skills, worktrees, checks and publication rules, and is Ricky's first stop for running the platform itself. Rig owns its supported seats, terminals, messages and coordination; operate it through its own commands and the platform's launchers, and do not invent another dispatcher. Until a documented handover, an existing development loop remains the owner of its active work. Direct coding windows can join the same task through explicit associations and an isolated worktree. Import only selected completed dependencies and verify the combined result.
 
 Morty owns personal continuity, journal custody and time/billing context; it is not an engineering approval gate. Neo has its own operational scope. Neither inherits this engineering mode automatically. Status is available on request; there is no scheduled morning-brief workflow. Schedules remain explicitly authorized and are not enabled by entering this mode.
 
