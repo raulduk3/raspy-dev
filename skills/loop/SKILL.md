@@ -35,12 +35,15 @@ the rig branch, where to read the diff (`git diff <base>...<rig branch>`), and t
 
 | Verb | Who |
 | --- | --- |
-| `status`, `plan`, `tasks` | anyone |
+| `status`, `state` (the same facts as JSON), `plan`, `tasks` | anyone |
 | `start`, `go`, `resume`, `pause`, `collect`, `fold` | a session or control seat on the owner's word |
 | `close --merge`, `close --push` (professional), `finish`, `tidy --apply` | the owner, in a terminal; an agent is refused |
 | `close --push` without `--ready` in a personal repository | the assistant may run it |
 
-The header of `dev-loop` (the script) is the full verb table; this table follows it.
+The header of `dev-loop` (the script) is the full verb table; this table follows it. Every lever
+is also in the `ai` menu under a project's Development loop: the goal branch, each worker
+branch under it (diff, report, open or release its seat, resume, merge up), dispatch, landing,
+tasks and tidy. The menu is the owner's terminal, so it runs the owner verbs after asking.
 
 ## Setup, once per machine
 

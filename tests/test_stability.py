@@ -496,6 +496,21 @@ class LocalLoopTests(Fixture):
             self.assertIn(expected, problems)
         self.loop('tasks', 'new', 'No scope', expected=2)
 
+    def test_state_reports_the_rig_branch_and_each_worker_as_json(self):
+        self.assertIsNone(json.loads(self.loop('state').stdout)['rig'])
+        self.loop('start', RIG)
+        env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')
+        self.loop('go', 'only', '1', env=env)
+        wt = next((self.repo / '.claude/worktrees').glob('loop-1-*'))
+        (wt / 'CLAUDE.md').write_text('<!-- BEGIN OpenRig MANAGED BLOCK: role -->\n')
+        (wt / 'source').write_text('changed\n')
+        self.run_cmd('git', 'commit', '-qam', 'feat(game): rules', cwd=wt)
+        state = json.loads(self.loop('state').stdout)
+        self.assertEqual((state['rig'], state['base'], state['mode']), (RIG, 'develop', 'local'))
+        self.assertEqual(state['workers'], [{'issue': 1, 'branch': 'feat/game-rules-1', 'worktree': str(wt),
+                                             'ahead': '1', 'state': 'working', 'seat': 'iztac-repo'}])
+        self.assertIn('#1 feat/game-rules-1 ahead 1: working, seat in iztac-repo', self.loop('status').stdout)
+
     def test_fold_releases_the_seat_and_requires_a_passing_check(self):
         self.loop('start', RIG)
         env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')

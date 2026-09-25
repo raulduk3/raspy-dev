@@ -38,6 +38,7 @@
 # Verbs. assistant = on the owner's word in that session, including a control seat; owner = the
 # owner in a terminal (refused without one); automation = the scheduled tick.
 #   status <repo>                        read-only summary                              anyone
+#   state <repo>                         the status facts as JSON (the ai menu reads it) anyone
 #   plan <repo>                          write and print the PLAN                       anyone
 #   start <repo> <type/slug>             cut the rig branch for this goal from the base
 #                                        into its worktree, record it, write the plan    assistant
@@ -76,7 +77,7 @@ CONF="${DEV_PLATFORM_REPOS:-$HOME/.config/dev-platform/repos.conf}"
 BRIEF_CONF="${DEV_PLATFORM_BRIEF:-$HOME/.config/dev-platform/brief.conf}"
 [ -f "$BRIEF_CONF" ] && . "$BRIEF_CONF"
 state="${LOOP_STATE_DIR:-$HOME/.local/state/dev-platform/loop}"
-verb="${1:?status|plan|start|go|pause|resume|tick|collect|fold|close|finish|tidy|tasks}"; repo="${2:?owner/repo}"; shift 2
+verb="${1:?status|state|plan|start|go|pause|resume|tick|collect|fold|close|finish|tidy|tasks}"; repo="${2:?owner/repo}"; shift 2
 CAP="${LOOP_CAP:-3}"
 MAX_TURNS="${LOOP_WORKER_MAX_TURNS:-60}"
 MAX_SECONDS="${LOOP_WORKER_MAX_SECONDS:-1800}"
@@ -206,6 +207,23 @@ live_worktrees() {  # cwd of every running claude process
 worker_wt_of() { ls -d "$(repo_dir)"/.claude/worktrees/loop-"$1"-* 2>/dev/null | head -1; return 0; }
 worker_branch_of() {  # issue -> local type/slug-<issue> branch
   git -C "$(repo_dir)" for-each-ref --format='%(refname:short)' 'refs/heads/*/*' | grep -E -- "-$1\$" | head -1; return 0
+}
+worker_rows() {  # issue <tab> branch <tab> worktree <tab> ahead <tab> state <tab> seat rig, one per worker
+  local dir wt i b ahead st seat
+  dir="$(repo_dir)"
+  for wt in "$dir"/.claude/worktrees/loop-*; do
+    [ -d "$wt" ] || continue
+    i="$(basename "$wt" | sed -nE 's/^loop-([0-9]+)-.*/\1/p')"; b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+    ahead="$(git -C "$dir" rev-list --count "${rig:-$(base_tip)}".."$b" 2>/dev/null || echo '?')"
+    seat=""; grep -qsF 'OpenRig MANAGED BLOCK' "$wt/CLAUDE.md" "$wt/AGENTS.md" && seat="$(cat "$out/workers/$i.seat" 2>/dev/null || echo '?')"
+    st=working
+    if [ -f "$wt/.worker-blocked.md" ]; then st=blocked
+    elif worker_running "$i"; then st=running
+    elif [ -f "$wt/.worker-pr.md" ]; then st="ready for review"
+    elif [ "$ahead" = 0 ]; then st="no commits"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$i" "$b" "$wt" "$ahead" "$st" "$seat"
+  done
 }
 folded_issues() { if [ -f "$out/folded.tsv" ]; then cut -f1 "$out/folded.tsv" | sort -un; fi; }
 exclusions() {  # "N reason" lines for loop-sense: folded issues and issues with a local worker
@@ -406,24 +424,27 @@ case "$verb" in
       fi
     fi
     echo "running:"; r="$(running_workers)"; if [ -n "$r" ]; then sed 's/^\([0-9]*\) \(.*\)$/  issue #\2 pid \1/' <<<"$r"; else echo "  none"; fi
-    echo "worker branches:"; found=0
-    for wt in "$dir"/.claude/worktrees/loop-*; do
-      [ -d "$wt" ] || continue; found=1
-      i="$(basename "$wt" | sed -nE 's/^loop-([0-9]+)-.*/\1/p')"; b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-      ahead="$(git -C "$dir" rev-list --count "$rig:-$(base_tip)}".."$b" 2>/dev/null || echo '?')"
-      st=working
-      if [ -f "$wt/.worker-blocked.md" ]; then st=blocked
-      elif worker_running "$i"; then st=running
-      elif [ -f "$wt/.worker-pr.md" ]; then st="ready for review"
-      elif [ "$ahead" = 0 ]; then st="no commits"
-      fi
-      echo "  #$i $b ahead $ahead: $st"
-    done
-    [ "$found" = 1 ] || echo "  none"
+    echo "worker branches:"; rows="$(worker_rows)"
+    if [ -n "$rows" ]; then
+      awk -F'\t' '{print "  #" $1 " " $2 " ahead " $4 ": " $5 ($6 != "" ? ", seat in " $6 : "")}' <<<"$rows"
+    else echo "  none"; fi
     echo "folded:"; if [ -s "$out/folded.tsv" ]; then awk -F'\t' '{print "  #" $1 " " $2 " " $3 " " $4}' "$out/folded.tsv"; else echo "  none"; fi
     if [ -f "$out/merged" ]; then echo "rig branch: merged locally into $(cat "$out/merged")"
     elif local_mode; then echo "pull request: none (local; loop.sh close --merge)"
     elif [ -f "$out/pr-url" ]; then echo "pull request: $(cat "$out/pr-url") as $(cat "$out/pushed-as" 2>/dev/null)"; else echo "pull request: not opened (loop.sh close)"; fi
+    ;;
+  state)  # the status facts as JSON, for the ai menu; read-only
+    dir="$(repo_dir)"; rows="$(worker_rows)"; last=""; [ -n "$rig" ] || last="$(cat "$ctl/last-rig" 2>/dev/null || true)"
+    jq -n --arg repo "$repo" --arg mode "${mode:-}" --arg steer "$(steer_word)" --arg rig "$rig" --arg base "$base_ref" \
+      --arg tip "$(base_tip)" --arg worktree "$( [ -z "$rig" ] || rig_wt "$rig")" --arg last "$last" \
+      --arg ahead "$( [ -z "$rig" ] || git -C "$dir" rev-list --count "$(base_tip)".."$rig" 2>/dev/null || echo '?')" \
+      --arg folded "$(folded_issues | paste -sd' ' -)" --arg rows "$rows" '
+      def opt: if . == "" then null else . end;
+      {repo: $repo, mode: $mode, steer: $steer, rig: ($rig | opt), base: $base, base_tip: $tip,
+       worktree: ($worktree | opt), ahead: ($ahead | opt), last_rig: ($last | opt),
+       folded: ($folded | split(" ") | map(select(. != "") | tonumber)),
+       workers: ($rows | split("\n") | map(select(. != "") | split("\t")
+         | {issue: (.[0] | tonumber), branch: .[1], worktree: .[2], ahead: .[3], state: .[4], seat: (.[5] // "" | opt)}))}'
     ;;
   plan)
     sense
