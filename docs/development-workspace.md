@@ -2,7 +2,7 @@
 
 `ai-work` is a thin interface over the existing repository configuration, Git
 identity, session manifests, and development loop. OpenRig, Claude Code, Codex,
-and OpenClaw can invoke the same interface. It does not introduce a task database,
+and the Pi roles can invoke the same interface. It does not introduce a task database,
 queue, scheduler, account switcher, or new execution authority.
 
 ## The organization

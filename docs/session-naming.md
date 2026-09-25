@@ -2,7 +2,7 @@
 
 All agents and contexts may name **their own session** automatically when the task becomes
 clear, and refresh their own generated title when scope materially changes. This includes
-OpenClaw assistants, OpenRig control seats, Claude Code, Codex, editor chats, delegated
+Pi roles (Morty, Neo, Iztac), OpenRig control seats, Claude Code, Codex, editor chats, delegated
 agents, headless workers, and personal/nonengineering work. No naming-only approval is
 needed. This is permission to use available naming controls, not a claim every client
 exposes one to the agent.
@@ -28,7 +28,7 @@ exposes one to the agent.
 | --- | --- |
 | Claude Code | Installed CLI `-n/--name` sets a new session's display name. The interactive `/rename` command is a user-facing native control; do not assume an agent can invoke slash commands as tools. |
 | Codex | Use an exposed native session-name control. The official app-server protocol has `thread/name/set`; use it only through an already integrated client. Do not start a parallel app-server or write SQLite just to rename. |
-| OpenClaw | Use the native session-label operation when exposed for the current session. A label is not the routing/session key. |
+| OpenClaw (retired) | Not used. Its preserved sessions are archives and are never renamed. |
 | OpenRig | Name the underlying harness conversation through a supported control. Rig names, seat IDs, member labels and native conversation titles are distinct; changing one does not prove the others changed. |
 | VS Code / other clients | Use the client's exposed native naming action if available. Otherwise retain its automatic title or suggest a concise title; do not invent a rename API. |
 | Filesystem index | `ai-session title` is an **index-only** display override. See [Session index](session-index.md). It never renames a native conversation. |

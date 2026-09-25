@@ -1,7 +1,7 @@
 # Session index and environment doctor
 
-`bin/ai-session` keeps a local, reconstructible index of Claude Code, Codex, OpenClaw and
-VS Code chat sessions. `bin/ai-env doctor` reports on the local toolchain. Both are local only:
+`bin/ai-session` keeps a local, reconstructible index of Claude Code, Codex and VS Code chat
+sessions, and of preserved OpenClaw sessions while that retired tool is still installed. `bin/ai-env doctor` reports on the local toolchain. Both are local only:
 no daemon, scheduler or database service, and neither writes native client storage.
 The opt-in Laya probe makes one local inference call through the installed helper, which
 may append its own metadata-only audit record; the default doctor makes no model call.
@@ -104,7 +104,7 @@ ai-env doctor [--json] [--probe-laya] [--home DIR] [--platform-root DIR]
 
 Read-only. Reports, with states `ok`, `missing`, `unavailable`, `unverified`, `broken`:
 
-- whether `claude`, `codex`, `openclaw`, `code`, `gh`, `git`, `jq`, `python3`, `laya-decide` are on PATH;
+- whether `claude`, `codex`, `code`, `gh`, `git`, `jq`, `python3`, `laya-decide` are on PATH;
 - missing canonical platform skills (directories containing `SKILL.md`) and broken symlinks in `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and links whose
   name matches a platform skill but point somewhere else (divergent). Canonical source is
   `~/Dev/dev-platform`, not the doctor executable’s checkout; override with `--platform-root`;
