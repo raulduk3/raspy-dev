@@ -13,6 +13,7 @@ import unittest
 PLATFORM = Path(__file__).resolve().parents[1]
 CHECK = PLATFORM / 'hooks/check-once.sh'
 LOOP = PLATFORM / 'skills/loop/scripts/loop.sh'
+RIG = 'feat/work'
 GUARD = PLATFORM / 'hooks/pre-tool-use-guard.sh'
 GHX = PLATFORM / 'skills/loop/scripts/ghx'
 
@@ -211,28 +212,28 @@ class CheckTests(Fixture):
 class LoopTests(Fixture):
     def test_main_base_start_and_pinning(self):
         self.setup_remote()
-        self.loop('start')
+        self.loop('start', RIG)
         ctl = self.ctl()
-        self.assertEqual((ctl / 'day-base').read_text().strip(), 'main')
-        day = (ctl / 'day-branch').read_text().strip()
+        self.assertEqual((ctl / 'rig-base').read_text().strip(), 'main')
+        day = (ctl / 'rig-branch').read_text().strip()
         self.assertEqual(self.run_cmd('git', 'rev-parse', day).stdout,
                          self.run_cmd('git', 'rev-parse', 'origin/main').stdout)
         self.configure(base='develop')
         self.assertIn('origin/main', self.loop('status').stdout)
-        self.loop('start', expected=3)
+        self.loop('start', RIG, expected=3)
 
     def test_explicit_stacked_base(self):
         self.run_cmd('git', 'branch', 'fix/bootstrap')
         self.setup_remote()
         self.configure(base='fix/bootstrap', personal=True)
-        self.loop('start')
-        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'fix/bootstrap')
+        self.loop('start', RIG)
+        self.assertEqual((self.ctl() / 'rig-base').read_text().strip(), 'fix/bootstrap')
 
     def test_personal_remote_default_main(self):
         self.setup_remote()
         self.configure(base='', personal=True)
-        self.loop('start')
-        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
+        self.loop('start', RIG)
+        self.assertEqual((self.ctl() / 'rig-base').read_text().strip(), 'main')
 
     def test_personal_symlink_default_main(self):
         self.setup_remote()
@@ -240,8 +241,8 @@ class LoopTests(Fixture):
         alias.symlink_to(self.repo, target_is_directory=True)
         self.configure(base='', path=alias)
         (self.config / 'personal.conf').write_text(str(alias) + '\n')
-        self.loop('start')
-        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
+        self.loop('start', RIG)
+        self.assertEqual((self.ctl() / 'rig-base').read_text().strip(), 'main')
 
     def test_personal_linked_alias_default_main(self):
         self.setup_remote()
@@ -251,15 +252,15 @@ class LoopTests(Fixture):
         alias.symlink_to(linked, target_is_directory=True)
         self.configure(base='', path=alias)
         (self.config / 'personal.conf').write_text(str(alias) + '\n')
-        self.loop('start')
-        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'main')
+        self.loop('start', RIG)
+        self.assertEqual((self.ctl() / 'rig-base').read_text().strip(), 'main')
 
     def test_professional_stays_develop_even_if_default_main(self):
         self.run_cmd('git', 'branch', 'develop')
         self.setup_remote()
         self.configure(base='', personal=False)
-        self.loop('start')
-        self.assertEqual((self.ctl() / 'day-base').read_text().strip(), 'develop')
+        self.loop('start', RIG)
+        self.assertEqual((self.ctl() / 'rig-base').read_text().strip(), 'develop')
 
     def test_mapping_accepts_linked_worktree(self):
         self.setup_remote()
@@ -273,20 +274,20 @@ class LoopTests(Fixture):
         env = dict(self.env, LOOP_AGENT_ACTS='1')
         for personal in (False, True):
             self.configure(personal=personal)
-            for args in [('fold', '1'), ('finish', '1'), ('tidy', '--apply')]:
+            for args in [('finish', '1'), ('tidy', '--apply')]:
                 with self.subTest(personal=personal, args=args):
                     self.loop(*args, env=env, expected=4)
         self.assertFalse(Path(self.env['GH_CALLS']).exists())
 
     def test_close_ready_and_professional_push_gated(self):
-        self.setup_remote(); self.loop('start')
+        self.setup_remote(); self.loop('start', RIG)
         self.loop('close', '--push', expected=4)
         self.configure(personal=True)
         self.loop('close', '--ready', expected=4)
         self.loop('close', '--push', '--ready', expected=4)
 
     def test_only_does_not_override_plan(self):
-        self.setup_remote(); self.loop('start')
+        self.setup_remote(); self.loop('start', RIG)
         result = self.loop('go', 'only', '999')
         self.assertIn('nothing to dispatch', result.stdout)
         self.assertEqual(list(self.repo.glob('.claude/worktrees/loop-*')), [])
@@ -298,8 +299,8 @@ class LoopTests(Fixture):
         self.loop('status', expected=2)
 
     def test_resume_respects_cap_without_launch(self):
-        self.setup_remote(); self.loop('start')
-        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        self.setup_remote(); self.loop('start', RIG)
+        day = (self.ctl() / 'rig-branch').read_text().strip().replace('/', '__')
         result_path = self.ctl() / day / 'workers/1.exit'
         process = subprocess.Popen([sys.executable, str(PLATFORM / 'skills/loop/scripts/worker-run.py'),
                                     '5', str(result_path), '--', sys.executable, '-c',
@@ -316,8 +317,8 @@ class LoopTests(Fixture):
             process.wait(timeout=7)
 
     def test_close_uses_base_and_accurate_verification(self):
-        self.setup_remote(); self.loop('start')
-        ctl = self.ctl(); day = (ctl / 'day-branch').read_text().strip().split('/', 1)[1]
+        self.setup_remote(); self.loop('start', RIG)
+        ctl = self.ctl(); day = (ctl / 'rig-branch').read_text().strip().replace('/', '__')
         out = ctl / day
         (out / 'folded.tsv').write_text('1\tfix/example\t123\tnow\n')
         (out / 'folded-1.md').write_text('## What changed and why\n\nFixture.\n\n## Verification\n\nFixture check.\n\n## Deploy and provider impact\n\nNone.\n\n## Review notes\n\nReview locally.\n')
@@ -352,8 +353,8 @@ class LoopTests(Fixture):
         return output.decode()
 
     def test_fold_refuses_an_attached_seat_and_committed_managed_context(self):
-        self.setup_remote(); self.loop('start')
-        day = (self.ctl() / 'day-branch').read_text().strip()
+        self.setup_remote(); self.loop('start', RIG)
+        day = (self.ctl() / 'rig-branch').read_text().strip()
         wt = self.repo / '.claude/worktrees/loop-1-example'
         self.run_cmd('git', 'worktree', 'add', '-q', '-b', 'fix/example-1', wt, day)
         (wt / 'source').write_text('changed\n')
@@ -371,8 +372,8 @@ class LoopTests(Fixture):
 
 
     def test_seat_rig_gives_a_resumed_issue_a_seat_instead_of_a_headless_worker(self):
-        self.setup_remote(); self.loop('start')
-        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        self.setup_remote(); self.loop('start', RIG)
+        day = (self.ctl() / 'rig-branch').read_text().strip().replace('/', '__')
         wt = self.repo / '.claude/worktrees/loop-1-example'
         self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/example-1', wt)
         (wt / '.worker-brief.md').write_text('Scope (only these path prefixes may change): source\n')
@@ -394,7 +395,7 @@ class LoopTests(Fixture):
 
 
 class LocalLoopTests(Fixture):
-    """A local repository: tasks are files, the day merges back locally, GitHub is never called."""
+    """A local repository: tasks are files, the rig branch merges back locally, GitHub is never called."""
 
     def setUp(self):
         super().setUp()
@@ -419,8 +420,8 @@ class LocalLoopTests(Fixture):
     def in_owner_terminal(self, *args):
         return LoopTests.in_owner_terminal(self, *args)
 
-    def test_a_day_runs_from_task_files_to_a_local_merge(self):
-        start = self.loop('start').stdout
+    def test_a_rig_branch_runs_from_task_files_to_a_local_merge(self):
+        start = self.loop('start', RIG).stdout
         self.assertIn('cut from develop', start)
         self.assertIn('#1 lane=', start)
         self.assertIn('#2 waits on #1', start)
@@ -435,14 +436,17 @@ class LocalLoopTests(Fixture):
         (wt / 'source').write_text('changed\n')
         self.run_cmd('git', 'commit', '-qam', 'feat(game): rules', cwd=wt)
         (wt / '.worker-pr.md').write_text('## What changed and why\n\nRules.\n\nCloses #1\n')
-        self.assertIn('folded', self.in_owner_terminal('fold', 'test/repo', '1'))
+        # A control seat folds a finished child into the rig branch; no owner terminal needed.
+        self.assertIn('folded', self.loop('fold', '1').stdout)
         self.assertIn('close test/repo --merge', self.loop('close').stdout)
         self.loop('close', '--push', expected=2)
-        self.assertIn('merged loop/', self.in_owner_terminal('close', 'test/repo', '--merge'))
+        self.loop('close', '--merge', expected=4)  # landing on the base stays the owner's
+        self.assertIn('merged feat/work into develop', self.in_owner_terminal('close', 'test/repo', '--merge'))
         self.assertEqual((self.repo / 'source').read_text(), 'changed\n')
         self.assertTrue((self.repo / 'docs/tasks/done/1-game-rules.md').exists())
         self.assertFalse((self.repo / 'docs/tasks/1-game-rules.md').exists())
-        self.assertFalse((self.ctl() / 'day-branch').exists())
+        self.assertFalse((self.ctl() / 'rig-branch').exists())
+        self.assertEqual(self.run_cmd('git', 'log', '--merges', '-1', '--format=%s').stdout.strip(), 'feat: work (#1)')
         self.assertEqual((self.ctl() / 'steer').read_text().strip(), 'pause')
         self.assertIn('#2 lane=', self.loop('plan').stdout)
         self.assertIn('merged locally into develop', self.loop('status').stdout)
@@ -492,6 +496,27 @@ class LocalLoopTests(Fixture):
             self.assertIn(expected, problems)
         self.loop('tasks', 'new', 'No scope', expected=2)
 
+    def test_fold_releases_the_seat_and_requires_a_passing_check(self):
+        self.loop('start', RIG)
+        env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')
+        self.loop('go', 'only', '1', env=env)
+        wt = next((self.repo / '.claude/worktrees').glob('loop-1-*'))
+        (wt / 'CLAUDE.md').write_text('<!-- BEGIN OpenRig MANAGED BLOCK: role -->\nx\n<!-- END OpenRig MANAGED BLOCK: role -->\n')
+        (wt / 'source').write_text('changed\n')
+        (wt / 'bin/check').write_text('#!/usr/bin/env bash\necho lint failed\nexit 1\n')
+        self.run_cmd('git', 'commit', '-qam', 'feat(game): rules', cwd=wt)
+        refused = self.loop('fold', '1', env=env).stdout
+        self.assertIn('released its seat in iztac-repo', refused)
+        self.assertIn(f'remove-worker --rig iztac-repo --cwd {wt}', (self.base / 'dev-workspace.calls').read_text())
+        self.assertIn('the check fails', refused)
+        self.assertIn('lint failed', refused)
+        self.assertTrue(wt.exists())
+        (wt / 'CLAUDE.md').unlink()
+        (wt / 'bin/check').write_text('#!/usr/bin/env bash\necho checked\n')
+        self.run_cmd('git', 'commit', '-qam', 'fix(check): pass', cwd=wt)
+        self.assertIn('folded', self.loop('fold', '1', env=env).stdout)
+        self.assertFalse(wt.exists())
+
     def test_workers_take_model_and_effort_from_the_setup_pstack_file(self):
         (self.repo / 'docs/tasks/4-spec.md').write_text(
             '# Spec\n\nStatus: ready\nLabels: spec\nScope: docs/spec\nDepends on: none\n')
@@ -505,7 +530,7 @@ class LocalLoopTests(Fixture):
                           f'open({str(calls)!r}, "a").write(json.dumps(sys.argv[1:]) + "\\n")\n')
         claude.chmod(0o755)
         env = dict(self.env, DEV_PLATFORM_PSTACK_MODELS=str(self.config / 'pstack-models.md'))
-        self.loop('start')
+        self.loop('start', RIG)
         self.loop('go', env=env)
         for _ in range(250):
             if calls.exists() and len(calls.read_text().splitlines()) == 2:
@@ -628,8 +653,8 @@ class WorkerBoundTests(Fixture):
     def detached_supervisor(self, timed_out, title='Fix "quoted" $(touch leaked)\n parser.',
                             expected_name='fix(repo): Fix "quoted" $(touch leaked) parser #1', account=False):
         self.setup_remote()
-        self.loop('start')
-        day = (self.ctl() / 'day-branch').read_text().strip().split('/', 1)[1]
+        self.loop('start', RIG)
+        day = (self.ctl() / 'rig-branch').read_text().strip().replace('/', '__')
         workers = self.ctl() / day / 'workers'
         wt = self.repo / '.claude/worktrees/loop-1-fixture'
         self.run_cmd('git', 'worktree', 'add', '-qb', 'fix/fixture', wt)
@@ -745,7 +770,7 @@ sys.exit(7)
 
     def test_account_preflight_fails_before_steer_change_or_worker_allocation(self):
         self.setup_remote()
-        self.loop('start')
+        self.loop('start', RIG)
         before = (self.ctl() / 'steer').read_text()
         for account in ('openai-gmail', 'zai', 'anthropic-apple'):
             self.loop('go', env=dict(self.env, LOOP_ACCOUNT_ID=account), expected=2)
@@ -759,7 +784,7 @@ sys.exit(7)
 
     def test_unreadable_account_registry_never_falls_back_to_legacy_dispatch(self):
         self.setup_remote()
-        self.loop('start')
+        self.loop('start', RIG)
         before = (self.ctl() / 'steer').read_bytes()
         registry = self.home / '.config/dev-platform/accounts.json'
         registry.parent.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from test_stability import Fixture, PLATFORM
+from test_stability import Fixture, PLATFORM, RIG
 
 RUNNER = PLATFORM / 'skills/loop/scripts/worker-run.py'
 
@@ -89,5 +89,5 @@ class WorkerIdentityTests(Fixture):
         result.with_suffix('.identity.json').unlink()
         self.assertIn(f'issue #1 pid {process.pid}', self.loop('status').stdout)
         self.setup_remote()
-        self.loop('start')
+        self.loop('start', RIG)
         self.assertIn('cap reached', self.loop('resume', '2', env=dict(self.env, LOOP_CAP='1')).stdout)
