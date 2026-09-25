@@ -108,7 +108,7 @@ Scratch files and helper scripts belong in a project worktree or project artifac
 - `templates/`: the repository standard: AGENTS, CONTRIBUTING, pull request template, hygiene checks, specs, release/check workflows.
 - `docs/how-it-connects.md`: the map of the whole setup (accounts, homes, seats, rigs, OpenRig) for the person using it. Start there.
 - `docs/rig-working-branches.md`: the control rig, one worker seat per loop worktree and a Codex overseer.
-- `docs/accounts.md`, `docs/session-index.md`, `docs/session-naming.md`, `docs/development-workspace.md`, and `docs/pstack-platform.md`: the contracts for the local ecosystem.
+- `docs/accounts.md`, `docs/session-index.md`, `docs/session-naming.md`, `docs/development-workspace.md`, `docs/skills-layer.md` and `docs/pstack-platform.md`: the contracts for the local ecosystem.
 - `ROLES.md`: which surface should do which kind of work.
 - `MODELS.md`: which model tier should do which kind of work.
 
@@ -123,7 +123,7 @@ The skills are not meant to be a pile of project-specific prompts. They are smal
 
 Some tasks should enter an active loop. Some should become a rig seat with a hydration packet. Some should stay a chat, a note, or a read-only investigation. That flexibility is the point.
 
-See [`docs/skills-audit.md`](docs/skills-audit.md) for which skill does what, and [`docs/pstack-platform.md`](docs/pstack-platform.md) for the engineering method.
+See [`docs/skills-layer.md`](docs/skills-layer.md) for the target shape, [`docs/skills-audit.md`](docs/skills-audit.md) for which skill does what, and [`docs/pstack-platform.md`](docs/pstack-platform.md) for the engineering method.
 
 ## Agents and surfaces
 
