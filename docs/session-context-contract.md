@@ -1,6 +1,6 @@
 # Shared session contract
 
-Status: target contract for the Pi migration, incorporating the owner's 2026-09-24 correction. Existing runtime storage has not been moved and these launch rules are not yet enforced. Session coherence precedes fleet expansion and retirement of OpenClaw.
+Status: target contract for the Pi migration, incorporating the owner's 2026-09-24 correction. Existing runtime storage has not been moved and these launch rules are not yet enforced. Session coherence precedes fleet expansion. OpenClaw has since been retired and is no longer used.
 
 ## Three durable concepts
 
@@ -97,11 +97,11 @@ Reconcile on launch/resume and before state-changing control; record lifecycle e
 2. Build the thin role launcher with explicit storage and resource loading. Prove Morty context isolation, Iztac project enforcement, and Neo's two modes using real Pi sessions.
 3. Link Iztac to existing Rig/project/seat identities and account-service observations; verify tmux/native sessions and message acknowledgement. Finish unsupported adapter behavior before claiming account rotation.
 4. Backfill evidenced historical relationships; expose unassigned records for review. Verify every retained source through the common reader and restore procedure.
-5. Run the lifecycle checks across real Claude/Codex/Pi execution before the OpenClaw shutdown trial.
+5. Run the lifecycle checks across real Claude/Codex/Pi execution.
 
 ## Evidence inspected
 
 - Local `lib/ai_ecosystem/{store,sessions,workspace}.py`: existing filesystem index, native IDs, resumption and cwd-based project grouping.
 - Pinned Pi 0.87.1 `docs/{sessions,sdk}.md`: explicit session storage, cwd/resource discovery, native tree and runtime replacement behavior.
 - Installed OpenRig 0.5.14 `rig context get skills/seat-continuity-and-handover`: stable seat identity, occupant lineage and separate binding/continuity outcomes.
-- Owner's current session-scope requirements take precedence over older OpenClaw-specific routing conventions.
+- Owner's current session-scope requirements take precedence over the retired OpenClaw routing conventions.

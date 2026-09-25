@@ -37,7 +37,7 @@ raspy-dev instruments the whole local developer stack:
 - **VS Code**: editor instructions and terminal approval defaults.
 - **Claude Code**: hooks, stop checks, formatting, command refusals, session conventions.
 - **Codex**: execution rules for bounded implementation and review work.
-- **Pi/OpenClaw-style agents**: role-specific assistants that can read the same platform contracts without becoming release authorities.
+- **Pi roles** (Morty, Neo, Iztac): role-specific assistants that read the same platform contracts without becoming release authorities.
 - **Native account/profile controls**: explicit account selection and quota snapshots for new CLI launches.
 - **Bun, Node, Python, gh, git, jq, 1Password CLI**: the ordinary local toolchain used by checks, helpers and runbooks.
 - **Laya**: optional local decision/probe service diagnostics through `ai-env doctor`.

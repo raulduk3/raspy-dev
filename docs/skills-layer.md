@@ -16,7 +16,7 @@ raspy-dev expects the same skill contracts to be reachable from several places:
 
 | Surface | How skills should behave |
 | --- | --- |
-| Pi/OpenClaw roles | Use skills to orient the role, find the owning project, read durable context, and hand off to the right surface. A personal role can read engineering context for billing or coordination, but does not become an engineering gate. |
+| Pi roles | Use skills to orient the role, find the owning project, read durable context, and hand off to the right surface. A personal role can read engineering context for billing or coordination, but does not become an engineering gate. |
 | Claude Code and Codex desktop sessions | Use skills as modes and playbooks. The desktop app may be flexible, but it still writes code in a worktree, uses the same hooks, and leaves durable work on the ledger. |
 | CLI/headless workers | Use narrow skills from a written brief: one issue, one branch, one worktree, one check, one report, then stop. |
 | OpenRig seats | Use skills to hydrate a seat with project identity, current loop state, nearby seats, allowed actions, and handoff rules. A rig seat is a conversation with a role, not a second scheduler. |

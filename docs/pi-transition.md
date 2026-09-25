@@ -1,6 +1,6 @@
 # Pi ecosystem transition
 
-Status: implementation in progress. OpenClaw remains available. No retirement is authorized by a successful component check alone.
+Status: OpenClaw is retired (owner, 2026-09-24): it is no longer used, and Morty, Iztac and Neo run in Pi. Its records stay preserved read-only. The acceptance list below is kept as the migration record.
 
 Priority correction: session ownership, scope and filesystem continuity come first. Follow [Shared session contract](session-context-contract.md) before expanding agent launches. Morty is personal and project-independent; Iztac requires a project or formation workspace; Neo starts with explicit system or project scope. Authentication alone is not readiness to migrate.
 

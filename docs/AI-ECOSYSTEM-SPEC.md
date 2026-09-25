@@ -1,6 +1,6 @@
 # Unified AI ecosystem specification
 
-Status: accepted direction consolidated from Ricky’s latest instructions; implementation incomplete. Updated 2026-09-24. Source baseline: `186bd1b`, with subsequent login evidence reported by **Plan OpenClaw migration (2)** in `outputs/local-environments-checkpoint.md` in the enclosing migration workspace. This is the canonical cross-system contract, not a claim of deployment or completed acceptance.
+Status: accepted direction consolidated from Ricky’s latest instructions; implementation incomplete. Updated 2026-09-24. Source baseline: `186bd1b`, with subsequent login evidence reported by **Plan OpenClaw migration (2)** in `outputs/local-environments-checkpoint.md` in the enclosing migration workspace. This is the canonical cross-system contract, not a claim of deployment or completed acceptance. Update 2026-09-24: OpenClaw is retired and no longer used. Its records stay preserved, read-only, as archives the Pi roles can read.
 
 ## Goal and authority
 
@@ -155,6 +155,6 @@ Quota percentages are deliberately omitted: they are changing observations, not 
 4. Complete Pi role launch through the same service. Demonstrate Morty’s neutral scope, Iztac’s project requirement and Neo’s resource scope; actual history retrieval, Perplexity search, durable conversation resume and writer ownership.
 5. Verify journal workflows retained by the owner, reconcile outstanding integrations and switch active writers. Preserve original files until restore and behavior checks pass.
 6. Demonstrate ordinary direct Claude/Codex use alongside Iztac/Rig without accidental sprint enrollment or duplicate dispatch. Verify account-profile skill projection and understandable terminal status/control.
-7. Install a coherent release and verify its actual public commands, then test interruption/recovery and archive restoration. Retire obsolete launch paths only after their replacements pass. OpenClaw shutdown/uninstall follows explicit destructive-action authority and preservation acceptance; it is not justified by source tests alone.
+7. Install a coherent release and verify its actual public commands, then test interruption/recovery and archive restoration. Retire obsolete launch paths only after their replacements pass. OpenClaw is retired; uninstalling it and removing any of its data still needs explicit owner authority, and its records stay preserved.
 
 Unresolved implementation decisions must stay small and visible: Pi identity attribution, reliable Claude usage signals, native handover mechanics, minimum TUI integration, final journal root/writer cutover and retained task/calendar semantics. Optional OS users and future Omarchy/network workers do not block the host-native foundation. Keep paths and contracts portable; do not build a speculative OS layer now.

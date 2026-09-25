@@ -1,5 +1,7 @@
 # What comes across from OpenClaw, and what does not
 
+OpenClaw is retired and no longer used. Its records stay preserved, read-only, as archives the Pi roles can read. This page records what the migration kept.
+
 The point of this migration is to lose weight. Most of what accumulated around
 the OpenClaw agents was scaffolding for daily automations and personal-device
 integrations that are not wanted again. What matters is the journal, the work

@@ -310,9 +310,9 @@ page cannot point it at services on this machine.
   own space, and adds the per-seat `config_home`
   field. Stock 0.5.14 is parked beside it. Undo: swap the two `app` directories and restart
   the daemon. Provenance and the upstream contribution notes are in the migration workspace.
-- **The daemon runs outside OpenClaw.** It used to inherit OpenClaw's environment, including
-  a proxy URL that no longer exists. It now starts from a clean environment. Undo: nothing to
-  undo; starting it from an OpenClaw shell would reintroduce the problem.
+- **The daemon starts from a clean environment.** It used to inherit the retired OpenClaw's
+  environment, including a proxy URL that no longer exists. Undo: nothing to undo; starting it
+  from a shell that carries provider or proxy overrides would reintroduce the problem.
 - **The tmux server was scrubbed.** Its global environment carried that same dead proxy, so
   every new seat inherited it. The launcher now removes such variables before every start,
   and `ai-env doctor` reports them.

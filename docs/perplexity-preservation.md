@@ -1,8 +1,8 @@
 # Preserve Perplexity search during the Pi migration
 
-Owner requirement: keep Perplexity search available to Morty, Iztac and Neo where appropriate. OpenClaw retirement is incomplete until this capability has a verified replacement or the owner explicitly changes the requirement.
+Owner requirement: keep Perplexity search available to Morty, Iztac and Neo where appropriate. OpenClaw is retired and no longer used; this requirement now stands on its own, for the Pi roles.
 
-Observed 2026-09-24: OpenClaw's Perplexity plugin is enabled, its web-search provider is Perplexity, and its plugin configuration contains an API-key setting. The value was not printed, copied or tested. Configuration presence does not establish current API entitlement or a successful query.
+Observed 2026-09-24, before retirement: OpenClaw's Perplexity plugin was enabled, its web-search provider was Perplexity, and its plugin configuration contained an API-key setting. The value was not printed, copied or tested. Configuration presence does not establish current API entitlement or a successful query.
 
 Perplexity provides an official MCP server, both remote (`https://api.perplexity.ai/mcp`) and local (`@perplexity-ai/mcp-server`), including `perplexity_search`. Prefer that supported interface for clients with an existing MCP implementation. Do not implement another search daemon or wrap every agent command.
 
