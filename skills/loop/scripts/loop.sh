@@ -755,7 +755,8 @@ EOF
     merged_or_pointer() { git -C "$dir" merge-base --is-ancestor "$1" "$(base_tip)" 2>/dev/null || [ "$(git -C "$dir" rev-parse "$1" 2>/dev/null)" = "$main_sha" ]; }
     echo "TIDY $today $repo"
     echo "remote branches merged into origin/$base_ref:"
-    local_mode || for b in $(git -C "$dir" for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's#^origin/##'); do
+    # lstrip gives the branch name itself; origin/HEAD would abbreviate to plain "origin".
+    local_mode || for b in $(git -C "$dir" for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin); do
       protected "$b" && continue
       git -C "$dir" merge-base --is-ancestor "origin/$b" origin/$base_ref && { echo "  $b"; echo "$b" >> "$tmp/remote"; }
     done; [ -f "$tmp/remote" ] || echo "  none"

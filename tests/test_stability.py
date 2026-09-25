@@ -269,6 +269,14 @@ class LoopTests(Fixture):
         self.configure(path=linked)
         self.loop('status')
 
+    def test_tidy_reads_remote_branches_past_origin_head(self):
+        self.setup_remote()
+        self.run_cmd('git', 'push', '-q', 'origin', 'HEAD:refs/heads/fix/done')
+        self.run_cmd('git', 'fetch', '-q', 'origin')
+        out = self.loop('tidy').stdout
+        self.assertNotIn('origin/origin', out)
+        self.assertIn('remote branches merged into origin/main:\n  fix/done', out)
+
     def test_owner_gates_no_bypass_or_network(self):
         self.setup_remote()
         env = dict(self.env, LOOP_AGENT_ACTS='1')
