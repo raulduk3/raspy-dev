@@ -329,12 +329,43 @@ def pick_account(client):
     return choose(f"Which {CLIENT[client]} account?", items)
 
 
-def open_client(project, client):
+def open_client(project, client, prompt=None):
+    """Open a client in the project; with prompt, it starts the conversation with that request."""
     account = pick_account(client)
     if account:
         run(tool("ai-environment") + ["run", "--client", client, "--provider", PROVIDER[client],
                                       "--preferred-account", account, "--allow-unknown-quota",
-                                      "--cwd", project["root"]])
+                                      "--cwd", project["root"]] + ([prompt] if prompt else []))
+
+
+SPEC_PROMPT = ("Use the intake skill to spec out this project from zero. The goal: {goal}. Write the first "
+               "decision for me to accept, then the first requirements in docs/spec and the first task files "
+               "with dev-loop tasks, on a docs/ branch. Stop when the spec branch is ready for me to merge.")
+
+
+def new_project():
+    """A goal in plain words becomes a local repository, registered for the loop, with a client
+    already asked to write its specification."""
+    answer = ask("Project name (a folder in ~/Dev): ")
+    if not answer:
+        return
+    project_name = slug(answer)
+    folder = Path(DEV_ROOT) / project_name
+    if folder.exists():
+        note(f"{folder} already exists. Open it from Projects instead.")
+        return
+    goal = ask("What do you want to build? ")
+    if run([str(ROOT / "bin/new-repo"), folder, "--register", "--personal"], pause=True) != 0 and not DRY:
+        return
+    project = next((p for p in catalog() if Path(p["root"]).resolve() == folder.resolve()), None)
+    if project is None:
+        note(f"{folder} was created but is not in repos.conf; open it from Projects.")
+        return
+    if goal:
+        client = choose("Who writes the spec?", [("Claude", "claude"), ("Codex", "codex")])
+        if client:
+            open_client(project, client, SPEC_PROMPT.format(goal=goal))
+    project_menu(project)
 
 
 def accounts_menu():
@@ -786,6 +817,7 @@ def loop_menu(project):
                       (f"Dispatch ready tasks as seats in {team}", "seats"),
                       ("Pause dispatch", "pause"),
                       (f"Show everything on {rig}", "diff"),
+                      ("Watch it in VS Code", "watch"),
                       (f"Land {rig}: merge it into {state.get('base')}" if local
                        else f"Land {rig}: push it and open the pull request", "land")]
             if not local:
@@ -795,6 +827,9 @@ def loop_menu(project):
             title = f"{project['repo']} · no goal branch open"
             items.append(("Start a branch for a goal", "start"))
             hint = f"Last landed: {state['last_rig']}." if state.get("last_rig") else "A goal gets one branch; workers branch from it."
+        specs = spec_branches(project, state.get("base"))
+        if specs:
+            items.append((f"Merge a spec branch into {state.get('base')} ({len(specs)} ready)", "spec"))
         items += [("Status", "status"), ("Plan", "plan"), ("Cycle report", "collect")]
         if local:
             items.append(("Tasks", "tasks"))
@@ -815,6 +850,11 @@ def loop_menu(project):
                 run(tool("ai-work") + ["loop", project["id"], "start", branch], pause=True)
         elif pick == "diff":
             run(["git", "-C", project["root"], "diff", f"{tip}...{rig}"])
+        elif pick == "watch":
+            folders = [state.get("worktree")] + [w["worktree"] for w in state.get("workers", [])]
+            run(["code", "-n", *[f for f in folders if f]])
+        elif pick == "spec":
+            merge_spec_branch(project, state.get("base"), specs)
         elif pick == "land":
             if confirm(f"Land {rig} on {state.get('base')}?"):
                 run(dev_loop(project, "close", "--merge" if local else "--push"), pause=True)
@@ -830,6 +870,30 @@ def loop_menu(project):
                 run(dev_loop(project, "tidy", "--apply"), pause=True)
         else:
             run(tool("ai-work") + ["loop", project["id"], pick], pause=True)
+
+
+def spec_branches(project, base):
+    """docs/ branches with work not yet on the base: what intake leaves for the owner to merge."""
+    if not base:
+        return []
+    listed = subprocess.run(["git", "-C", project["root"], "for-each-ref", "--format=%(refname:short)",
+                             "refs/heads/docs/"], capture_output=True, text=True).stdout.split()
+    return [b for b in listed if subprocess.run(["git", "-C", project["root"], "rev-list", "--count", f"{base}..{b}"],
+                                                capture_output=True, text=True).stdout.strip() not in ("", "0")]
+
+
+def merge_spec_branch(project, base, specs):
+    branch = choose("Which spec branch?", [(b, b) for b in specs], "Read it first: its diff opens before merging.")
+    if branch is None:
+        return
+    current = subprocess.run(["git", "-C", project["root"], "branch", "--show-current"],
+                             capture_output=True, text=True).stdout.strip()
+    if current != base and not DRY:
+        note(f"The checkout is on {current}; switch it to {base} first.")
+        return
+    run(["git", "-C", project["root"], "diff", f"{base}...{branch}"])
+    if confirm(f"Merge {branch} into {base}?"):
+        run(["git", "-C", project["root"], "merge", "--no-ff", "-m", f"Merge branch '{branch}'", branch], pause=True)
 
 
 def worker_menu(project, state, worker, team):
@@ -914,7 +978,8 @@ def home():
     while True:
         upgrade_if_released()
         items = [(f"This project: {name(here)}", lambda: project_menu(here))] if here else []
-        items += [("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
+        items += [("Start a new project", new_project),
+                  ("Projects", projects_menu), ("Recent sessions", lambda: sessions_menu(None)),
                   ("Morty, personal", lambda: role_menu("morty")), ("Neo, this machine", lambda: role_menu("neo")),
                   ("Iztac, on a project", iztac_menu),
                   ("Teams", teams_menu), ("Accounts and setup", accounts_menu)]

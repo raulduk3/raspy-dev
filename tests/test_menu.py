@@ -366,11 +366,40 @@ class Menu(unittest.TestCase):
     def test_landing_asks_first_and_runs_the_owner_verb_directly(self):
         loop = str(self.menu.LOOP)
         with self.open_goal():
-            self.assertEqual(self.loop_runs('6', 'n'), [])
-            self.assertEqual(self.loop_runs('6', 'y'), [f'{loop} close owner/repo --merge'])
+            self.assertEqual(self.loop_runs('7', 'n'), [])
+            self.assertEqual(self.loop_runs('7', 'y'), [f'{loop} close owner/repo --merge'])
         with self.open_goal(mode='owner'):
-            self.assertEqual(self.loop_runs('6', 'y'), [f'{loop} close owner/repo --push'])
-            self.assertEqual(self.loop_runs('7', '12'), [f'{loop} finish owner/repo 12'])
+            self.assertEqual(self.loop_runs('7', 'y'), [f'{loop} close owner/repo --push'])
+            self.assertEqual(self.loop_runs('8', '12'), [f'{loop} finish owner/repo 12'])
+
+    def test_the_goal_and_its_workers_open_together_in_vs_code(self):
+        with self.open_goal():
+            runs = self.loop_runs('6')
+        self.assertEqual(runs, [f'code -n {self.project["root"]}/.claude/worktrees/loop-1-rules'])
+
+    def test_a_finished_spec_branch_is_read_then_merged_from_the_menu(self):
+        self.project['mode'] = 'local'
+        with mock.patch.object(self.menu, 'loop_state', return_value={'base': 'develop'}), \
+                mock.patch.object(self.menu, 'spec_branches', return_value=['docs/tetris']):
+            runs = self.loop_runs('2', '1', 'y')
+        root = self.project['root']
+        self.assertEqual(runs, [f'git -C {root} diff develop...docs/tetris',
+                                f"git -C {root} merge --no-ff -m Merge branch 'docs/tetris' docs/tetris"])
+
+    def test_a_new_project_starts_from_a_goal_and_opens_a_client_to_spec_it(self):
+        self.menu.DEV_ROOT = str(self.root)
+        folder = self.root / 'tetris'
+        project = dict(self.project, root=str(folder), repo='owner/tetris', id='owner-tetris')
+        with mock.patch.object(self.menu, 'catalog', return_value=[project]), \
+                mock.patch.object(self.menu, 'pick_account', return_value='anthropic-gmail'), \
+                mock.patch.object(self.menu, 'project_menu') as opened:
+            output = self.drive(self.menu.new_project, 'Tetris', 'a falling-blocks game', '1')
+        runs = self.runs(output)
+        self.assertTrue(runs[0].endswith(f'bin/new-repo {folder} --register --personal'))
+        self.assertIn(f'--cwd {folder} Use the intake skill to spec out this project from zero. '
+                      'The goal: a falling-blocks game.', runs[1])
+        opened.assert_called_once_with(project)
+        self.assertEqual(self.runs(self.drive(self.menu.new_project, '')), [])
 
     def test_a_worker_is_merged_up_released_or_resumed_from_its_own_menu(self):
         loop = str(self.menu.LOOP)
