@@ -72,8 +72,12 @@ The steps above are the same for both. The differences:
 
 Every task carries `Scope: <comma-separated path prefixes>` and `Depends on: #N, #M` or `Depends
 on: none`. Only ready tasks with both lines are selected. Scopes must be pairwise prefix-disjoint
-within one dispatch; dependencies must be done, or already folded into the rig branch. The
-documentation lines the repository requires in the same change are always in scope.
+within one dispatch; dependencies must be done, or already folded into the rig branch.
+
+The specification changes only through a spec task (`Labels: spec`). A build task may move the
+status marker of the items it cites and any lock line, and nothing else under `docs/spec/`,
+`docs/decisions/` or `docs/tasks/`; fold refuses the branch and shows the lines otherwise. A
+worker that finds the spec wrong writes `.worker-blocked.md`, and the fix becomes a spec task.
 
 ## Workers
 

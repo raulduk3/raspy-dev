@@ -292,9 +292,10 @@ Repository $repo. Branch \`$branch\` from \`$rig\` at $base. This directory is y
 Read AGENTS.md and CONTRIBUTING.md here first; the repository's rules win over this brief.
 Issue #$i: $title
 Scope (only these path prefixes may change): $scope
-The documentation lines the repository's rules require in the same pull request are always in
-scope as well: the specification text a behavior change affects, its status marker that cites
-this issue, and any lock digest that guards it.
+The status marker that cites this task, and any lock digest that guards it, are always in scope
+as well. The specification text itself is not: it changes only through a spec task. If the work
+needs a requirement or design item to say something different, write that in
+\`.worker-blocked.md\` and stop; merging refuses a build branch that edits it.
 1. $read_task
 2. If the fix needs code or test files outside the scope, write what you found (the paths you
    would need and why) to \`.worker-blocked.md\` in this directory and stop. Do not comment on the
@@ -568,6 +569,16 @@ PY
       ahead="$(git -C "$dir" rev-list --count "$rig".."$b")"
       [ "$ahead" -gt 0 ] || { echo "  #$i: $b has no commits beyond $rig"; continue; }
       if git -C "$dir" diff --name-only --diff-filter=A "$rig"..."$b" | grep -qE '(^|/)\.worker-'; then echo "  #$i: $b commits a .worker-* file; fix the branch first"; continue; fi
+      # The specification changes only through a spec task. A build branch may move the status
+      # markers (trace comments) and lock lines it cites, and nothing else under these paths.
+      if ! (issue_json "$i" 2>/dev/null || echo '{}') | jq -e 'any(.labels[]?; .name == "spec")' >/dev/null; then
+        drift="$(git -C "$dir" diff -U0 "$rig"..."$b" -- docs/spec docs/decisions docs/tasks | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' |
+          grep -vE '^[+-][[:space:]]*<!-- (id:|spec-lock).*-->[[:space:]]*$' || true)"
+        if [ -n "$drift" ]; then
+          echo "  #$i: $b changes the specification; only a spec task may, and this one is not labeled spec:"
+          printf '%s\n' "$drift" | head -5 | sed 's/^/    /'; continue
+        fi
+      fi
       # The check must pass on the branch as it will merge; a pass recorded by the worker counts.
       if [ -n "$wt" ] && ! chk="$(cd "$wt" && bash "$HOOKS/check-once.sh" 2>&1)"; then
         echo "  #$i: the check fails in $wt; not folded"; printf '%s\n' "$chk" | tail -5 | sed 's/^/    /'; continue

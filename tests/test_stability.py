@@ -511,6 +511,39 @@ class LocalLoopTests(Fixture):
                                              'ahead': '1', 'state': 'working', 'seat': 'iztac-repo'}])
         self.assertIn('#1 feat/game-rules-1 ahead 1: working, seat in iztac-repo', self.loop('status').stdout)
 
+    def test_only_a_spec_task_may_change_the_specification(self):
+        spec = self.repo / 'docs/spec'
+        spec.mkdir(parents=True)
+        (spec / 'SDD.md').write_text('**GR-01.** The snake must grow when it eats.\n'
+                                     '<!-- id: SDD-GR-01 | tdd: TDD-1.1.1 | status: pending:#1 -->\n'
+                                     '\n**GR-02.** The game must end at a wall.\n')
+        (self.repo / 'docs/tasks/4-amend.md').write_text(
+            '# Amend growth\n\nStatus: ready\nLabels: spec\nScope: docs/spec\nDepends on: none\n')
+        self.commit()
+        self.loop('start', RIG)
+        env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')
+        self.loop('go', 'only', '1', '4', env=env)
+        build = next((self.repo / '.claude/worktrees').glob('loop-1-*'))
+        (build / 'source').write_text('changed\n')
+        (build / 'docs/spec/SDD.md').write_text('**GR-01.** The snake must grow by two when it eats.\n'
+                                              '<!-- id: SDD-GR-01 | tdd: TDD-1.1.1 | status: implemented -->\n'
+                                              '\n**GR-02.** The game must end at a wall.\n')
+        self.run_cmd('git', 'commit', '-qam', 'feat(game): rules', cwd=build)
+        refused = self.loop('fold', '1').stdout
+        self.assertIn('changes the specification; only a spec task may', refused)
+        self.assertIn('-**GR-01.** The snake must grow when it eats.', refused)
+        (build / 'docs/spec/SDD.md').write_text('**GR-01.** The snake must grow when it eats.\n'
+                                              '<!-- id: SDD-GR-01 | tdd: TDD-1.1.1 | status: implemented -->\n'
+                                              '\n**GR-02.** The game must end at a wall.\n')
+        self.run_cmd('git', 'commit', '-qam', 'docs(spec): mark GR-01 implemented', cwd=build)
+        self.assertIn('folded', self.loop('fold', '1').stdout)
+        amend = next((self.repo / '.claude/worktrees').glob('loop-4-*'))
+        (amend / 'docs/spec/SDD.md').write_text('**GR-01.** The snake must grow when it eats.\n'
+                                              '<!-- id: SDD-GR-01 | tdd: TDD-1.1.1 | status: pending:#1 -->\n'
+                                              '\n**GR-02.** The game must end at a wall or at itself.\n')
+        self.run_cmd('git', 'commit', '-qam', 'docs(spec): grow by two', cwd=amend)
+        self.assertIn('folded', self.loop('fold', '4').stdout)
+
     def test_fold_releases_the_seat_and_requires_a_passing_check(self):
         self.loop('start', RIG)
         env = dict(self.env, DEV_WORKSPACE=str(self.workspace), LOOP_SEAT_RIG='iztac-repo')
