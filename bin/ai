@@ -27,7 +27,7 @@ import tty
 ROOT = Path(__file__).resolve().parent.parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "lib"))
-from ai_ecosystem import accounts, conversations, usage, workspace  # noqa: E402
+from ai_ecosystem import accounts, conversations, rigshape, usage, workspace  # noqa: E402
 from ai_ecosystem.store import Store  # noqa: E402
 
 HOME = Path.home()
@@ -576,16 +576,28 @@ def project_team(project):
             print(f"\n{name(project)}'s team is not running. Starting it opens the team defined in "
                   f"{folder / 'rig.yaml'}.")
         else:
-            print(f"\n{name(project)} has no team yet. Starting one opens a control seat and a Codex overseer.\n"
-                  f"They work from {folder}, outside the repository. Workers join later, one per loop worktree.")
+            print(f"\n{name(project)} has no team yet. Its seats work from {folder}, outside the repository;\n"
+                  f"workers join later, one per task. Pick its shape first; you can change it any time.")
+            shape = pick_shape()
+            if shape is None:
+                return
         if not confirm("Start it?"):
             return
         folder.mkdir(parents=True, exist_ok=True)
         if project["repo"]:
             (folder / "project").write_text(project["repo"] + "\n")
+        if not (folder / "rig.yaml").is_file() and \
+                run(tool("rig-shape") + ["write", project["repo"] or project["root"], shape]) != 0 and not DRY:
+            return
         if run(tool("dev-workspace") + ["start", "iztac", "--cwd", folder, "--rig", team]) != 0 and not DRY:
             return
     team_menu(team, project)
+
+
+def pick_shape():
+    return choose("Which shape?", [(f"{shape} · {summary.split(': ', 1)[-1]}", shape)
+                                   for shape, summary in rigshape.shapes().items()],
+                  "build is the standard team. The shape is recorded in the engagement folder's own history.")
 
 
 def team_menu(team, project=None):
@@ -596,7 +608,8 @@ def team_menu(team, project=None):
         items = [("Open the team's space in herdr", "view")]
         items += [(f"{s['logicalId']} · {s.get('runtime')} · {seat_state(s)}", s) for s in rows]
         if project:
-            items += [("Seat a loop worktree", "seat"), ("Unseat a finished worker", "unseat")]
+            items += [("Seat a loop worktree", "seat"), ("Unseat a finished worker", "unseat"),
+                      ("Shape this team (takes effect at its next start)", "shape"), ("Shape history", "history")]
         items.append(("Stop this team", "stop"))
         where = f" · {name(project)}" if project else ""
         pick = choose(f"Team {team}{where}", items, "The team's space holds rig tui and every agent in one tab.")
@@ -611,6 +624,12 @@ def team_menu(team, project=None):
                 return
         elif pick in ("seat", "unseat"):
             worker_seat(project, team, pick)
+        elif pick == "shape":
+            shape = pick_shape()
+            if shape:
+                run(tool("rig-shape") + ["write", project["repo"] or project["root"], shape], pause=True)
+        elif pick == "history":
+            run(tool("rig-shape") + ["history", project["repo"] or project["root"]], pause=True)
         elif seat_state(pick).startswith("stopped"):
             if confirm(f"{pick['logicalId']} is stopped. Relaunch it with its saved conversation?"):
                 relaunch(rig_id, pick)

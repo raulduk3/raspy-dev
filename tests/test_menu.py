@@ -139,19 +139,22 @@ class Menu(unittest.TestCase):
     def test_a_project_team_starts_outside_the_repository_under_its_own_name(self):
         with mock.patch.object(self.menu, 'rigs', return_value=[]), \
                 mock.patch.object(self.menu, 'seats', return_value=[]):
-            output = self.drive(self.menu.project_team, 'y', '', project=self.project)
+            output = self.drive(self.menu.project_team, '1', 'y', '', project=self.project)
         folder = self.root / 'engagements/research-agent'
         self.assertTrue(folder.is_dir())
-        self.assertTrue(self.runs(output)[0].endswith(
-            f'bin/dev-workspace start iztac --cwd {folder} --rig iztac-research-agent'))
+        self.assertIn('Which shape?', output)
+        runs = self.runs(output)
+        self.assertTrue(runs[0].endswith('bin/rig-shape write owner/repo build'))
+        self.assertTrue(runs[1].endswith(f'bin/dev-workspace start iztac --cwd {folder} --rig iztac-research-agent'))
         with mock.patch.object(self.menu, 'rigs', return_value=[]):
-            declined = self.drive(self.menu.project_team, 'n', project=self.project)
-        self.assertEqual(self.runs(declined), [])
+            declined = self.drive(self.menu.project_team, '1', 'n', project=self.project)
+            self.assertEqual(self.runs(declined), [])
+            self.assertEqual(self.runs(self.drive(self.menu.project_team, project=self.project)), [])
 
     def test_a_team_follows_its_repository_when_the_checkout_is_renamed(self):
         with mock.patch.object(self.menu, 'rigs', return_value=[]), \
                 mock.patch.object(self.menu, 'seats', return_value=[]):
-            self.drive(self.menu.project_team, 'y', '', project=self.project)
+            self.drive(self.menu.project_team, '1', 'y', '', project=self.project)
         self.assertEqual((self.root / 'engagements/research-agent/project').read_text(), 'owner/repo\n')
         renamed = dict(self.project, root=str(self.root / 'renamed-checkout'))
         with mock.patch.object(self.menu, 'catalog', return_value=[renamed]):
@@ -174,6 +177,13 @@ class Menu(unittest.TestCase):
         self.assertNotIn('Codex overseer', output)
         self.assertTrue(self.runs(output)[0].endswith(
             f'bin/dev-workspace start iztac --cwd {folder} --rig iztac-research-agent'))
+
+    def test_a_project_team_is_reshaped_and_its_history_read_from_its_menu(self):
+        with mock.patch.object(self.menu, 'seats', return_value=[]):
+            reshaped = self.runs(self.drive(self.menu.team_menu, '4', '3', team='t', project=self.project))
+            history = self.runs(self.drive(self.menu.team_menu, '5', team='t', project=self.project))
+        self.assertTrue(reshaped[0].endswith('bin/rig-shape write owner/repo solo'))
+        self.assertTrue(history[0].endswith('bin/rig-shape history owner/repo'))
 
     def test_team_seats_attach_relaunch_and_stop(self):
         seats = [{'rigId': 'R1', 'logicalId': 'control.lead', 'runtime': 'claude-code', 'sessionStatus': 'running',

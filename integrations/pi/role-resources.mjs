@@ -10,7 +10,7 @@ import { webFetchExtension } from './web-fetch-tool.mjs';
 
 // Iztac's skills, by path: its engineering mode, and the platform skills that take a project from
 // a goal to a specification and tasks. Discovery stays off; these are loaded explicitly.
-export const IZTAC_SKILLS = ['agents/iztac/skills/iztac-engineering', 'skills/new-repo', 'skills/intake', 'skills/distill'];
+export const IZTAC_SKILLS = ['agents/iztac/skills/iztac-engineering', 'skills/new-repo', 'skills/intake', 'skills/distill', 'skills/setup-rig'];
 
 export async function loadRoleResources({ conversation, conversationHome, platformRoot, agentDir, identityFile, historyArchive, memoryState, journalRoot, extensionFactories = [] }) {
   const { agent, scope, binding } = conversation;
