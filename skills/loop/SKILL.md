@@ -81,8 +81,9 @@ outside its scope, or the task already done, writes `.worker-blocked.md` and sto
 
 With `LOOP_SEAT_RIG=<running rig>`, dispatch gives each task an interactive seat in that rig's
 `workers` pod (`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex; a Codex seat takes
-`LOOP_SEAT_ACCOUNT` or its native home) and records the rig, so fold can release the seat. See
-`docs/rig-working-branches.md`.
+`LOOP_SEAT_ACCOUNT` or its native home) and records the rig, so fold can release the seat. A
+blocked worker is never folded, so its seat stays until the owner or control seat releases it with
+`dev-workspace remove-worker --rig <rig> --cwd <worktree>`. See `docs/rig-working-branches.md`.
 
 ## Other verbs
 

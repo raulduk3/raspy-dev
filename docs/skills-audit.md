@@ -244,3 +244,11 @@ design to the platform's where they differ. On branch `feat/pstack-skills`:
   workers' model and effort.
 - The day-branch model is replaced in design by her branch-per-unit model (see the map);
   `loop.sh` is not yet changed.
+
+## Addendum, evening of 2026-09-24: rig branches
+
+This audit records the morning's view; the tables above predate pstack and the loop change. On
+branch `feat/rig-branches`: the loop works on a goal's `type/slug` rig branch instead of a
+`loop/<date>` day branch; `fold` is a control-seat verb that checks the branch, releases the
+worker's seat and merges it up; landing the rig branch on the base stays the owner's. pstack's
+front door is `/dev-plat` and session entry is `/develop`.
