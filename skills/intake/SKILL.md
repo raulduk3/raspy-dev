@@ -62,6 +62,21 @@ local|owner|bot [base]`).
    into the base in a terminal (`git merge --no-ff docs/<slug>`); the loop sees tasks only on the
    base. GitHub: one draft pull request citing the decision issue.
 
+## Where it runs
+
+The specification is decided before it is built. Intake runs on its own branch from the base and
+lands before any goal branch that builds it; a spec change never rides inside a build task, and
+the loop's fold refuses a build branch that edits spec text.
+
+- **From zero:** `new-repo --register --personal`, then intake in the new repository with the
+  goal as the source: Iztac in its project, or Claude Code or Codex opened there (the `ai` menu
+  opens any of them in the project). The owner accepts the decision and merges the spec branch;
+  then `dev-loop start <repo> <type/slug>` builds it.
+- **During a goal:** a worker that finds the spec wrong blocks. The control seat, a policy or
+  review seat, or the owner runs intake for that one change and writes it as a task labeled
+  `spec`; only that task's branch may change the specification.
+- **Many raw notes at once:** `distill` first, then intake on the candidates worth acting on.
+
 Traceability: decision, then the specification change that cites it, then tasks depending on
 it, then the worker changes that close them (`Closes #N` in the worker's `.worker-pr.md`).
 

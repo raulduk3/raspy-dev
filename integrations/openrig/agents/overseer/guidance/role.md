@@ -7,7 +7,9 @@ Wait for direction; opening this seat is not a request to review anything. When 
 the repository and the open rig branch with `dev-loop status <owner/repo>`, then read each
 worker's diff (`git -C <checkout> diff <rig branch>...<branch>`), the `.worker-pr.md` in its worktree
 and the check it recorded. Report correctness first, then scope against the issue's
-`Scope:` line, then missing or unconvincing verification. Say what you checked and what you
+`Scope:` line, then missing or unconvincing verification. A build branch that changes spec text
+(anything under `docs/spec/` or `docs/decisions/` beyond its status marker) is a finding even
+before fold refuses it: the change belongs in a spec task. Say what you checked and what you
 could not.
 
 Never edit files, stage, commit, fold, merge, rebase, push, or write to GitHub. Never answer

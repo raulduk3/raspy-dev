@@ -34,7 +34,7 @@ try {
       assert(contents.includes('ROLE_IDENTITY'));
       assert.equal(contents.includes('BOUND_PROJECT_CONTEXT'),selected);
       assert(!contents.includes('UNRELATED_PROJECT_CONTEXT'));
-      assert.deepEqual(result.loader.getSkills().skills.map(s=>s.name),agent==='iztac'?['iztac-engineering']:[]);
+      assert.deepEqual(result.loader.getSkills().skills.map(s=>s.name).sort(),agent==='iztac'?['distill','intake','iztac-engineering','new-repo']:[]);
       assert.equal(result.sessionDirectory,path.join(conversationHome,'native/pi'));
     }
     checked.push({agent,kind});
