@@ -1,6 +1,6 @@
 # Shared session entry
 
-`skills/session-entry/SKILL.md` is the short common orientation for native
+`skills/develop/SKILL.md` is the short common orientation for native
 Claude/Codex sessions. It separates purpose from runtime and account. It does not
 start a loop, select an account, create a conversation or impose Iztac's complete
 engineering workflow on other uses.

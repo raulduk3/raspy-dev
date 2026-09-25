@@ -77,7 +77,7 @@ Each execution records its conversation, runtime/native ID, explicit cwd/project
 
 On resume, use the saved scope and original profile, not the invoking terminal’s cwd or today’s highest-quota account. Account handover creates a linked successor with an explicit checkpoint. Never swap credentials beneath an active process or automatically replay a possibly completed tool action. Forks preserve their parent reference. Scope changes are explicit and link related conversations as appropriate.
 
-A shared [session-entry skill](session-entry.md) runs at start, resume and material task change. It is brief orientation, not a mandatory sprint questionnaire. Native standalone Claude/Codex conversations remain valid for personal, operational and independent project work. A coding client becomes an Iztac worker only through a real assignment association.
+A shared [`/develop` skill](session-entry.md) runs at start, resume and material task change. It is brief orientation, not a mandatory sprint questionnaire. Native standalone Claude/Codex conversations remain valid for personal, operational and independent project work. A coding client becomes an Iztac worker only through a real assignment association.
 
 Use one writer per conversation and isolated worktrees for concurrent engineering writers. Local cooperative locking is not a distributed lock or protection against every unmanaged native invocation.
 

@@ -2,9 +2,9 @@
 
 - Status: proposed | accepted | superseded by NNNN
 - Date: YYYY-MM-DD
-- Issue: #N
+- Task or issue: #N
 - Spec: the SDD and TDD items the decision changes
-- Pull requests: #N (or "pending")
+- Changes: the merge or pull request that carried it (or "pending")
 
 ## Context
 

@@ -9,8 +9,8 @@
 # .prettierignore, .gitignore, a README stub), commits on main, tags v0.1.0 so the version
 # derives, creates develop, and, when --github names a repository, creates it with gh, pushes both
 # branches and applies the rulesets under github/rulesets/. Without --github nothing leaves the
-# machine: the repository is local, its tasks are files in docs/tasks/, and the loop merges its
-# days back locally. It is left on develop. --register adds it to repos.conf (local, or owner with
+# machine: the repository is local, its tasks are files in docs/tasks/, and the loop merges each
+# goal's rig branch back locally. It is left on develop. --register adds it to repos.conf (local, or owner with
 # --github) so Iztac, the team and the loop can find it; --personal also lists it in
 # personal.conf as the owner's own project. Exit 0 on success.
 set -euo pipefail
@@ -107,16 +107,20 @@ JSON
 cat > "$directory/.prettierrc.json" <<'JSON'
 { "printWidth": 100, "semi": true, "singleQuote": false, "trailingComma": "all", "endOfLine": "lf" }
 JSON
-# Hand-edited HTML must not fail format:check. Add to a .prettierignore the templates carry.
+# Hand-edited HTML must not fail format:check, nor may the files OpenRig and the loop place in a
+# worker worktree (context collector, local settings, worker brief and report, managed instruction
+# blocks). Add to a .prettierignore the templates carry.
 touch "$directory/.prettierignore"
-grep -qxF "docs/incoming.html" "$directory/.prettierignore" || echo "docs/incoming.html" >> "$directory/.prettierignore"
+for pattern in docs/incoming.html .openrig/ .claude/ '.worker-*' CLAUDE.md AGENTS.md; do
+  grep -qxF "$pattern" "$directory/.prettierignore" || echo "$pattern" >> "$directory/.prettierignore"
+done
 cat > "$directory/eslint.config.js" <<'JS'
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["node_modules/", "dist/"] },
+  { ignores: ["node_modules/", "dist/", ".openrig/", ".claude/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,

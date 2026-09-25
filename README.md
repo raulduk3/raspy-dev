@@ -1,28 +1,31 @@
-# raspy-dev
-
 <p align="center">
-  <pre>
-        ╭────────────────────────────────────────────╮
-        │                raspy-dev                   │
-        │     one tiny cockpit for many AI tools     │
-        ╰───────────────┬────────────────────────────╯
-                        │
-        ╭───────────────┼─────────────────────────────╮
-        │               │                             │
-      GitHub          Herdr                        OpenRig
-   ledger + PRs    cockpit view                   rig seats
-        │               │                             │
-        ╰──── VS Code · Claude · LLM · Codex · Pi ────╯
-                        │
-              checks · skills · sessions
-  </pre>
+  <img src="docs/images/raspy-dev.jpg" alt="A terracotta bowl with animals carved in relief around its rim" width="360">
 </p>
+
+<h1 align="center">raspy-dev</h1>
+
+<p align="center"><em>One small cockpit for many AI tools. Say what you want; watch a team build it on one branch; land it yourself.</em></p>
 
 A small personal development platform for keeping AI-assisted software work organized, bounded, and reviewable.
 
-raspy-dev is not a framework, a product, or a replacement for GitHub. It is the local glue around my editor, terminal, coding agents, repository templates, checks, native-account selection, sessions, rig seats, and project workflow. The goal is simple: every tool can help, but GitHub remains the ledger and a human remains the release authority.
+raspy-dev is not a framework, a product, or a replacement for GitHub. It is the local glue around my editor, terminal, coding agents, repository templates, checks, native-account selection, sessions, rig seats, and project workflow. The goal is simple: every tool can help, git holds the truth, and a human remains the release authority. Everything runs locally; GitHub is opt-in per repository.
 
 The style is deliberately modest and opinionated: inspired by the small-stack clarity of Theo/T3-style tooling and the practical pstack spirit of tiny local systems that do one job well.
+
+## Try it: "hmm, I want Tetris"
+
+One command, `ai`, and plain sentences. Everything stays on your machine.
+
+1. **Say the goal.** Run `ai`, pick **Start a new project**, name it `tetris`, and answer *What do you want to build?* with "a Tetris game in the browser". The repository is created from the templates, and Claude (or Codex) opens in it already asked to spec it.
+2. **Agree on the spec.** In that chat, read the decision it drafts and say "yes". It writes the first requirements and the task files on a `docs/` branch, then stops.
+3. **Land the spec.** Back in `ai`: **tetris**, **Development loop**, **Merge a spec branch into develop**. Read the diff, answer `y`.
+4. **Start the team.** **This project's team** starts a control seat and a review seat; **Open the team's space in herdr** shows them side by side.
+5. **Name the goal.** **Development loop**, **Start a branch for a goal**, `feat/tetris`.
+6. **Seat the workers.** **Dispatch ready tasks as seats** gives every ready task a worker on its own branch. Tell the control seat "start the workers".
+7. **Watch it happen.** **Watch it in VS Code** opens the goal branch and every worker's branch as folders in one window; files fill in as the workers commit.
+8. **Land it.** When the workers report done, tell the control seat "merge them up". It checks each branch, releases its seat and merges it into `feat/tetris`, then tells you it is ready. Pick **Land feat/tetris** and answer `y`. One merge on `develop`, and the game is there.
+
+The shape underneath: a goal gets one branch, each task gets a child branch, finished children merge up once their check passes, and only you land the goal on the base. [`skills/loop/SKILL.md`](skills/loop/SKILL.md) has the verbs; [`docs/pstack-platform.md`](docs/pstack-platform.md) the engineering method (`/dev-plat`).
 
 ## What it connects
 
@@ -44,9 +47,9 @@ Each tool keeps its native UX. raspy-dev supplies the common rules, scripts, tem
 ## The shape of the system
 
 ```text
-owner decision
-  -> GitHub issue / decision / pull request
-  -> local project checkout or worktree
+owner goal
+  -> decision, spec and task files (or GitHub issues, where a repository opts in)
+  -> a goal branch, and a child branch per task in its own worktree
   -> Herdr / OpenRig / VS Code / Claude Code / Codex / Pi
   -> skills pick the lane and hydrate the surface
   -> checks and guardrails
@@ -54,7 +57,7 @@ owner decision
   -> human review, merge, tag, deploy
 ```
 
-The important rule is that there is one ledger. Chats, agents, desktop apps, rig seats and terminals are work surfaces. GitHub issues and pull requests are the durable record.
+The important rule is that there is one ledger. Chats, agents, desktop apps, rig seats and terminals are work surfaces. Git is the durable record: branches, commits, task files and decision records, with GitHub issues and pull requests where a repository uses them.
 
 ## Filesystem layout
 
@@ -99,12 +102,13 @@ Scratch files and helper scripts belong in a project worktree or project artifac
 - `bin/dev-workspace`: starts or plans native OpenRig control seats safely.
 - `bin/ai-env`: read-only diagnostics for local tools, skills and optional services.
 - `hooks/`: command guards, stop checks, one-shot check caching, post-edit formatting.
-- `skills/loop`: the local development loop: plan, dispatch bounded workers, collect, fold, close.
-- `skills/intake` and `skills/distill`: turn external notes into decision/spec work without copying private source material into repos.
+- `skills/loop`: work toward a goal on one branch: dispatch workers on child branches, merge each finished child up, land the goal once.
+- `skills/dev-plat` and the other pstack skills: the engineering method, ported from [pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT, Lauren Tan) by `bin/pstack-port`.
+- `skills/intake` and `skills/distill`: turn a goal or external notes into decisions, specification and task files, without copying private source material into repos.
 - `templates/`: the repository standard: AGENTS, CONTRIBUTING, pull request template, hygiene checks, specs, release/check workflows.
 - `docs/how-it-connects.md`: the map of the whole setup (accounts, homes, seats, rigs, OpenRig) for the person using it. Start there.
 - `docs/rig-working-branches.md`: the control rig, one worker seat per loop worktree and a Codex overseer.
-- `docs/accounts.md`, `docs/session-index.md`, `docs/session-naming.md`, `docs/development-workspace.md`, and `docs/skills-layer.md`: the contracts for the local ecosystem.
+- `docs/accounts.md`, `docs/session-index.md`, `docs/session-naming.md`, `docs/development-workspace.md`, `docs/skills-layer.md` and `docs/pstack-platform.md`: the contracts for the local ecosystem.
 - `ROLES.md`: which surface should do which kind of work.
 - `MODELS.md`: which model tier should do which kind of work.
 
@@ -119,7 +123,7 @@ The skills are not meant to be a pile of project-specific prompts. They are smal
 
 Some tasks should enter an active loop. Some should become a rig seat with a hydration packet. Some should stay a chat, a note, or a read-only investigation. That flexibility is the point.
 
-See [`docs/skills-layer.md`](docs/skills-layer.md) for the target shape and the cleanup plan for the current skills.
+See [`docs/skills-layer.md`](docs/skills-layer.md) for the target shape, [`docs/skills-audit.md`](docs/skills-audit.md) for which skill does what, and [`docs/pstack-platform.md`](docs/pstack-platform.md) for the engineering method.
 
 ## Agents and surfaces
 

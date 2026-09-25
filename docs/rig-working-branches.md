@@ -12,12 +12,12 @@ reuses the loop skill's branch contract; it does not add a second one.
 | --- | --- | --- | --- |
 | Control (`control.lead`) | Claude Code, native default home | an engagement folder outside the repository | none |
 | Overseer (`review.overseer`) | Codex, native default home | the same engagement folder | none; reads with `git -C` |
-| Worker (`workers.issue-N`) | Claude Code or Codex, any verified account | the loop's worktree for issue N | `type/slug-N`, cut from `loop/<date>` |
+| Worker (`workers.issue-N`) | Claude Code or Codex, any verified account | the loop's worktree for issue N | `type/slug-N`, cut from the goal's rig branch |
 
 Control and overseer stay out of the repository on purpose. OpenRig writes guidance
 blocks into the folder's `CLAUDE.md` or `AGENTS.md`. Repositories track those files, so
-a seat in the day worktree would keep it modified, and the loop folds only into a clean
-day worktree. Workers do sit in worktrees, one seat each, and are removed before fold.
+a seat in the rig worktree would keep it modified, and the loop folds only into a clean
+rig worktree. Workers do sit in worktrees, one seat each; fold releases the seat.
 
 The control seat directs the loop on the owner's word, using the pstack-informed
 practice in its guidance. The overseer reads worker diffs, each `.worker-pr.md` and the

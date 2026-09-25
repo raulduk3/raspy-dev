@@ -49,13 +49,13 @@ No attribution trailer and no generated-with line: every commit, pull request an
 
 - `README.md` says what the software is and how to run it.
 - `docs/` holds the contracts; `docs/decisions/` holds accepted decisions as records.
-- GitHub issues hold every open decision and known deviation, cited by number.
+- `docs/tasks/` holds planned work and known deviations, and `docs/decisions/` proposed decisions, cited by number (an issue tracker instead, where `CONTRIBUTING.md` says so).
 
 If code and contract disagree, say so with evidence and fix the one that is wrong. Do not improvise a local workaround.
 
 ## Scope freezes
 
-None. A new feature needs the owner's decision on a GitHub issue before a branch is cut.
+None. A new feature needs the owner's accepted decision before a branch is cut.
 
 ## Precedence
 

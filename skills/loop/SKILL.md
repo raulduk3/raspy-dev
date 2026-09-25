@@ -1,103 +1,117 @@
 ---
-name: "loop"
-description: "Direct an existing repository development loop from any owner-directed coding surface, with one ledger, isolated workers and recorded checks."
+name: loop
+description: >-
+  Work toward a goal on one branch with a team of workers: cut the goal's branch, give each
+  ready task a worker on a child branch, merge each finished child up once its check passes,
+  and hand the owner one command to land the goal's branch. Also lists and writes local task
+  files. Use for "run the loop", "start the team", "dispatch workers", "fold", "land it".
 ---
 
 # loop
 
-The repository sees exactly what its policy asks for: one branch cut from the resolved base, one pull
-request to that base with the template body and the check output, merged under the owner’s explicit authorization. The
-batching is local. Workers branch from a local day branch and never push; the owner reviews each
-worker branch on this machine and folds it into the day branch; at close the day branch is
-pushed once under an ordinary `type/slug` name. No bot, no comment on any issue, no `loop/*` ref
-on the remote, no CI until the one pull request opens, delivery according to that repository’s workflow.
+A branch is the only unit of work. The loop is one way to repeat work until a goal is done;
+it does not own the calendar.
 
-Use the installed `dev-loop` command (the platform loop script), or `ai-work loop` for supported control verbs. State: `LOOP_STATE_DIR/<owner__repo>/` (layout in the header of `dev-loop`). `steer` is
-the gate: first word `go` or `pause`, and a missing file means pause. `day-branch` names the
-open day (`loop/<date>`); its worktree is `.claude/worktrees/day-<date>` in the checkout.
+1. **The goal gets a branch.** `dev-loop start <owner/repo> <type/slug>` cuts an ordinary branch
+   from the base, for example `feat/snake-game`. This is the rig branch. Its worktree is
+   `.claude/worktrees/rig-<type>-<slug>` in the checkout.
+2. **Each task gets a child branch.** `dev-loop go` gives every ready task a worker (headless, or
+   an OpenRig seat) in its own worktree, on a `type/slug-N` branch cut from the rig branch.
+3. **Finished children merge up.** `dev-loop fold <owner/repo> N` merges a finished child into the
+   rig branch. The control seat or any directed session may run it. It releases the worker's seat,
+   runs the repository's check on the branch (a pass the worker recorded counts), and refuses a
+   running or blocked worker, a dirty worktree, a branch that commits `.worker-*` files or
+   OpenRig's managed context, and a conflict. It never touches the base.
+4. **The rig branch lands once, by the owner.** `dev-loop close <owner/repo> --merge` (local) or
+   `close --push` (GitHub) runs in the owner's terminal. It checks the rig branch head, writes
+   `pr.md` with one `Closes #N` per folded task, and then merges locally or pushes the rig branch
+   under its own name and opens one pull request. The title comes from the branch:
+   `feat/snake-game` becomes `feat: snake game (#1, #2)`.
+
+When every worker is folded, the control seat tells the owner once: which children merged into
+the rig branch, where to read the diff (`git diff <base>...<rig branch>`), and the one command.
+
+## Who runs what
+
+| Verb | Who |
+| --- | --- |
+| `status`, `state` (the same facts as JSON), `plan`, `tasks` | anyone |
+| `start`, `go`, `resume`, `pause`, `collect`, `fold` | a session or control seat on the owner's word |
+| `close --merge`, `close --push` (professional), `finish`, `tidy --apply` | the owner, in a terminal; an agent is refused |
+| `close --push` without `--ready` in a personal repository | the assistant may run it |
+
+The header of `dev-loop` (the script) is the full verb table; this table follows it. Every lever
+is also in the `ai` menu under a project's Development loop: the goal branch, each worker
+branch under it (diff, report, open or release its seat, resume, merge up), dispatch, landing,
+tasks and tidy. The menu is the owner's terminal, so it runs the owner verbs after asking.
 
 ## Setup, once per machine
 
 `~/.config/dev-platform/repos.conf`: one line per repository, `owner/repo checkout-path
-local|owner|bot [base-branch]`, separated by spaces or tabs (paths cannot contain spaces). `local` is the default posture: see Local repositories below;
-`new-repo --register` writes the line. `owner` means the two GitHub writes the loop makes (`pr create` at close,
-`issue close` at finish) use the human's own `gh` login and require the owner’s authorization and the script’s supported execution surface;
-`bot` means the machine user's token from 1Password. `~/.config/dev-platform/brief.conf` sets
-`LOOP_STATE_DIR` (default `~/.local/state/dev-platform/loop`).
+local|owner|bot [base-branch]`, separated by spaces or tabs. `new-repo --register` writes it.
+`local` never touches GitHub. `owner` makes the two GitHub writes (`pr create` at close, `issue
+close` at finish) with the owner's own `gh` login; `bot` uses the machine user's token.
+`~/.config/dev-platform/brief.conf` sets `LOOP_STATE_DIR` (default
+`~/.local/state/dev-platform/loop`). A project is named the same everywhere: `dev-loop` takes
+`owner/repo`; `ai-work loop` takes `owner/repo`, the project id, or the checkout path.
 
-## Local repositories
+## Local and GitHub, one motion
 
-A `local` repository never touches GitHub. Its tasks are files, `docs/tasks/<N>-<slug>.md` on the
-base branch, in the format of that folder's README: the first heading is the title, `Status: ready`
-stands for the `sprint-ready` label, `Labels:` adds labels, and the `Scope:` and `Depends on:` lines
-below apply unchanged. A task in `docs/tasks/done/` is closed. `start` cuts the day from the local
-base without fetching. The worker brief points at the task file. `close` checks the day head and
-writes `pr.md`; `close --merge`, in the owner's terminal with the base checked out and clean, merges
-the day into the base with `pr.md` as its message, moves the folded tasks to `done/`, and removes the
-day worktree and branch. `finish` only tidies a day the owner merged by hand. Nothing is pushed.
+The steps above are the same for both. The differences:
 
-## Issue conventions
+- Tasks: `docs/tasks/<N>-<slug>.md` files on the base (local), or GitHub issues labeled
+  `sprint-ready` (GitHub). `dev-loop tasks <repo> [list|next|new|check]` writes and checks local
+  task files; the `intake` skill decides what they are.
+- `start` fetches the base first only for GitHub.
+- Landing: `close --merge` merges locally and moves the folded task files to `docs/tasks/done/`;
+  `close --push` opens the pull request, and after the owner merges it on GitHub,
+  `finish <owner/repo> <pr>` closes the folded issues and removes the rig branch.
+- A professional repository gets the ghost check before anything reaches GitHub.
 
-Every implementable issue body carries two plain lines: `Scope: <comma-separated path prefixes>`
-and `Depends on: #N, #M` or `Depends on: none`. Only issues labeled `sprint-ready` with both lines
-are selected. Scopes must be pairwise prefix-disjoint within one dispatch; dependencies must be
-closed, or already folded into the open day branch. `Scope:` lists code and test prefixes. The
-documentation lines the repository requires in the same change (specification text, status
-markers, lock digests) are always in scope and are not checked for overlap. An issue that an open
-pull request cites, that is folded, or that holds a local worker branch is not reselected.
+## Task conventions
 
-## Procedure
+Every task carries `Scope: <comma-separated path prefixes>` and `Depends on: #N, #M` or `Depends
+on: none`. Only ready tasks with both lines are selected. Scopes must be pairwise prefix-disjoint
+within one dispatch; dependencies must be done, or already folded into the rig branch.
 
-Owner-directed OpenRig, OpenClaw, Claude Code and Codex sessions may run `start`, `plan`, `go`, `pause`, `collect` and local `close` against the same ledger. The script still requires an owner terminal for `fold`, `finish`, `tidy --apply` and ready publication. A personal repository permits authorized draft `close --push`; professional publication remains owner-controlled. Do not schedule `tick` or launch a competing dispatcher. `pause` stops future dispatch, not running workers.
+The specification changes only through a spec task (`Labels: spec`). A build task may move the
+status marker of the items it cites and any lock line, and nothing else under `docs/spec/`,
+`docs/decisions/` or `docs/tasks/`; fold refuses the branch and shows the lines otherwise. A
+worker that finds the spec wrong writes `.worker-blocked.md`, and the fix becomes a spec task.
 
-1. `dev-loop status <owner/repo>`: steer, open day, running workers, worker branches and
-   their state, folded issues, the day pull request.
-2. `dev-loop start <owner/repo>`: fetch, cut `loop/<date>` from the resolved remote base into the
-   day worktree, record it, write the PLAN. Refuses while a day is open.
-3. `dev-loop go <owner/repo> [only N ...|skip N ...]`: write `steer: go`, plan, dispatch a
-   worker per selected issue not yet dispatched, up to configured `LOOP_CAP` (default 3). Model per issue by tier:
-   `spec`, `decision`, `privacy`, `security` labels use the judgment tier; `documentation` the
-   mechanical tier; everything else the implementation tier. `dev-loop tick` does the same
-   from a schedule and prints `NO_REPLY` unless steer says go and a day is open;
-   `dev-loop pause` prevents further dispatch; already-running workers continue.
-4. A worker: one issue, one worktree, one `type/slug-N` branch from the day branch. It commits,
-   runs `hooks/check-once.sh` (which records the passing tree), writes `.worker-pr.md` with the
-   four template sections and `Closes #N`, and stops. It never pushes, opens a pull request or
-   comments. A worker that finds the fix outside its scope, or the issue already resolved, writes
-   `.worker-blocked.md` and stops; the owner widens the scope or closes the issue.
-5. `dev-loop collect <owner/repo>`: the CYCLE report from the ledger and the worktrees,
-   with its one metrics line.
-6. `dev-loop fold <owner/repo> N ...`: the owner, after reading the worker's diff
-   (`git diff loop/<date>..<branch>`) and `.worker-pr.md` in its worktree, merges the branch into
-   the day branch with a merge commit, keeps the body under the ledger, removes the branch and
-   worktree. Refuses a running worker, a blocked one, a dirty worktree, a branch that commits a
-   `.worker-*` file, and a conflict (aborted; resolve by hand in the day worktree, then rerun).
-7. `dev-loop close <owner/repo> [--as type/slug] [--title ...]`: run the check once on the
-   day head (fails closed), write `pr.md` from the folded bodies with one `Closes #N` per issue,
-   print the exact push and create commands. `--push` pushes the day branch as `type/slug`
-   (default `fix/<date>`) and opens the one draft pull request to the recorded base (`--ready` opens it
-   ready). After more folds, `close --push` again pushes the update to the same pull request and rewrites its
-   title and body from `pr.md`.
-8. The owner reviews and merges it on GitHub, the repository’s required checks and delivery workflow.
-   `dev-loop finish <owner/repo> <pr>` then closes each folded issue with `Merged in #pr.`
-   (closing keywords never fire on a non-default branch), deletes the pushed branch, removes the
-   day worktree and branch, and writes `steer: pause`.
-9. `dev-loop tidy <owner/repo>` weekly, read-only: remote branches merged into the recorded base,
-   clean worktrees with no live session whose branch is merged or a pointer to `main`, local
-   branches in the same state. `--apply` bundles every ref to the ledger first, then deletes.
+## Workers
+
+A worker has one task, one worktree, one branch. It commits, runs `hooks/check-once.sh` (which
+records the passing tree), writes `.worker-pr.md` with the four template sections and `Closes
+#N`, and stops. It never pushes, opens a pull request or comments. A worker that finds the fix
+outside its scope, or the task already done, writes `.worker-blocked.md` and stops.
+
+With `LOOP_SEAT_RIG=<running rig>`, dispatch gives each task an interactive seat in that rig's
+`workers` pod (`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex; a Codex seat takes
+`LOOP_SEAT_ACCOUNT` or its native home) and records the rig, so fold can release the seat. A
+blocked worker is never folded, so its seat stays until the owner or control seat releases it with
+`dev-workspace remove-worker --rig <rig> --cwd <worktree>`. See `docs/rig-working-branches.md`.
+
+## Other verbs
+
+- `dev-loop status <owner/repo>`: steer, the rig branch, running workers, worker branches and their
+  state, folded tasks, the pull request; with none open, the last rig branch that landed.
+- `dev-loop collect <owner/repo>`: the CYCLE report, with seat workers counted.
+- `dev-loop tick <owner/repo>` does what `go` does from a schedule, only when the steer says `go`.
+  The steer is the gate: first word `go` or `pause`; a missing file means pause. Landing writes
+  `pause`.
+- `dev-loop tidy <owner/repo>`: read-only list of merged branches and clean, unused worktrees;
+  `--apply` bundles every ref first, then deletes.
 
 Writes to GitHub go through `scripts/ghx <owner/repo> <gh args>`, which picks the identity from
 `repos.conf` and refuses merge, ready and review on every repository.
 
-## Worker seats
+## Base and limits
 
-With `LOOP_SEAT_RIG=<running rig>`, dispatch cuts the worktree and brief as usual and gives the
-issue an interactive seat in that rig's `workers` pod instead of a headless worker
-(`dev-workspace add-worker`; `LOOP_SEAT_RUNTIME` claude or codex; a Codex seat takes
-`LOOP_SEAT_ACCOUNT` or its native home). Seats are not counted by `status`, `collect` or the cap. The owner removes the seat
-(`dev-workspace remove-worker`) before fold; fold refuses while its block remains and refuses a
-branch that commits OpenRig's managed context. See `docs/rig-working-branches.md`.
-
-## Base and execution limits
-
-The fourth `repos.conf` column pins the base. Without it, a personal repository uses its remote default branch; a professional repository uses `develop`. An open day retains its recorded `day-base`. Read status before starting from another surface. `LOOP_WORKER_MAX_TURNS`, `LOOP_WORKER_MAX_SECONDS` and `LOOP_WORKER_TOKEN_CEILING` declare worker bounds; token ceiling is a prompt budget, not a provider spending cap. Quota failure stops the lane rather than silently switching accounts.
+The fourth `repos.conf` column pins the base. Without it, a personal repository uses its remote
+default branch; a professional repository uses `develop`. An open rig branch keeps its recorded
+base. One rig branch is open per repository at a time. `LOOP_WORKER_MAX_TURNS`,
+`LOOP_WORKER_MAX_SECONDS` and `LOOP_WORKER_TOKEN_CEILING` bound workers; the token ceiling is a
+prompt budget, not a spending cap. A quota failure stops the lane rather than switching accounts.
+Worker models come from `~/.config/dev-platform/pstack-models.md` when `/setup-pstack` wrote it
+(see `MODELS.md`).

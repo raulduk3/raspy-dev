@@ -136,8 +136,13 @@ def loop_argv(project, verb, selectors):
         raise ValueError('loop controls require an available configured repos.conf checkout')
     if verb not in VERBS:
         raise ValueError('unsupported loop operation')
-    if selectors and (verb != 'go' or selectors[0] not in ('only', 'skip') or len(selectors) < 2
-                      or any(not re.fullmatch(r'[1-9][0-9]*', n) for n in selectors[1:])):
+    if verb == 'start':
+        # start names the goal's branch, an ordinary type/slug branch.
+        if len(selectors) != 1 or not re.fullmatch(r'(feat|fix|docs|refactor|test|chore|perf)/[a-z0-9][a-z0-9._-]*',
+                                                   selectors[0]):
+            raise ValueError('start takes the branch for the goal: type/slug, for example feat/snake-game')
+    elif selectors and (verb != 'go' or selectors[0] not in ('only', 'skip') or len(selectors) < 2
+                        or any(not re.fullmatch(r'[1-9][0-9]*', n) for n in selectors[1:])):
         raise ValueError('only go accepts selectors: only|skip followed by positive issue numbers')
     return [str(PLATFORM / 'skills/loop/scripts/loop.sh'), verb, project['repo'], *selectors]
 

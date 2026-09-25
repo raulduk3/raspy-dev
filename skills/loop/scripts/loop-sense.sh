@@ -4,15 +4,15 @@
 # Read-only. Reads open issues, open pull requests and their checks. Parses the two plain lines
 # every implementable issue carries (`Scope: <path prefixes>` and `Depends on: #N, #M | none`),
 # builds the dependency graph, selects `sprint-ready` issues whose dependencies are closed (or
-# already folded into the open day branch) and whose scopes are pairwise prefix-disjoint, up to
+# already folded into the open rig branch) and whose scopes are pairwise prefix-disjoint, up to
 # the cap, and prints the plan in the fixed format. Nothing here posts anywhere; the plan is
 # written to --out. The gate is the steer file that loop.sh keeps: `go` dispatches, anything
 # else, including no file at all, is pause.
 #
 # Usage: loop-sense.sh --repo owner/name [--local-cap 3] [--exclude-file f] [--out plan.md]
 #   --exclude-file: lines of `<issue> <reason>` from the local ledger (folded issues waiting for
-#   the day pull request, issues with a local worker branch). A reason starting with `folded`
-#   also satisfies a dependency, because that code is already on the day branch.
+#   the rig branch's pull request, issues with a local worker branch). A reason starting with `folded`
+#   also satisfies a dependency, because that code is already on the rig branch.
 #   --tasks <checkout> <ref>: a local repository. Tasks come from docs/tasks/ on that ref
 #   (loop-tasks.py) instead of GitHub issues, and GitHub is never called.
 set -u
@@ -62,14 +62,14 @@ closed_set="$(jq -r '.[].number' "$tmp/closed.json" | tr '\n' ' ')"
 is_closed() { case " $closed_set " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # Issues already in review on GitHub: an open pull request cites them (`Closes #N`) or its
-# branch ends in `-N`. The day pull request cites every folded issue once it is open.
+# branch ends in `-N`. The rig branch's pull request cites every folded issue once it is open.
 in_review_lines="$(jq -r '.[] | .number as $pr
   | ( ((.body // "") | scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]),
       ((.headRefName // "") | capture("-(?<n>[0-9]+)$")? | .n) )
   | "\(.) \($pr)"' "$tmp/prs.json" 2>/dev/null)"
 in_review() { awk -v n="$1" '$1==n {print "pr#" $2; found=1; exit} END {exit !found}' <<<"$in_review_lines"; }
 
-# Issues the local ledger excludes: folded into the day branch, or holding a worker branch.
+# Issues the local ledger excludes: folded into the rig branch, or holding a worker branch.
 excluded() {  # <issue> -> prints the reason, exit 1 when not excluded
   [ -n "$EXCLUDE_FILE" ] && [ -f "$EXCLUDE_FILE" ] || return 1
   awk -v n="$1" '$1==n {sub(/^[0-9]+ /,""); print; found=1; exit} END {exit !found}' "$EXCLUDE_FILE"

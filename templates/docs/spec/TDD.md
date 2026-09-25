@@ -17,14 +17,14 @@ How the software is built to meet each requirement, item by item, with the code 
 
 - "must" states a requirement.
 - "must not" states a prohibition.
-- No other word makes a requirement. A proposal that is not decided is a GitHub issue and does not appear here.
+- No other word makes a requirement. A proposal that is not decided is a decision record with `Status: proposed` under `docs/decisions/` (or a `decision` issue where the repository uses an issue tracker) and does not appear here.
 
 ## Conventions
 
 - Each item is a `#### TDD-<section>.<n> Title` heading.
 - A trace comment follows it: `<!-- id: TDD-x.y.z | implements: XX-nn | code: path#Symbol | tests: path or none | status: ... -->`.
 - Items are numbered in reading order. A cited item is never renumbered; new items are appended.
-- Status is one of `implemented`, `pending:#issue` (decided, not yet implemented) or `deviation:#issue` (the code does not yet meet it).
+- Status is one of `implemented`, `pending:#N` (decided, not yet implemented) or `deviation:#N` (the code does not yet meet it), where `#N` is the task in `docs/tasks/` (or the issue) that carries the work.
 
 Example, not part of the specification:
 

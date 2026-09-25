@@ -321,17 +321,104 @@ class Menu(unittest.TestCase):
             output = self.drive(self.menu.team_menu, '2', team='t')
         self.assertIn('RUN tmux attach -t control-lead@t', output)
 
-    def test_loop_dispatches_seats_only_into_a_running_team(self):
-        with mock.patch.object(self.menu, 'rigs', return_value=[]):
-            refused = self.drive(self.menu.loop_menu, '5', project=self.project)
+    def open_goal(self, mode='local', **worker):
+        folder = Path(self.project['root']) / '.claude/worktrees/loop-1-rules'
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / '.worker-pr.md').write_text('## What changed and why\n')
+        worker = {'issue': 1, 'branch': 'feat/rules-1', 'worktree': str(folder), 'ahead': '1',
+                  'state': 'ready for review', 'seat': 'iztac-research-agent', **worker}
+        state = {'repo': 'owner/repo', 'mode': mode, 'rig': 'feat/snake-game', 'base': 'develop',
+                 'base_tip': 'develop', 'ahead': '2', 'workers': [worker], 'folded': []}
+        self.project['mode'] = mode
+        return mock.patch.object(self.menu, 'loop_state', return_value=state)
+
+    def loop_runs(self, *answers):
+        return self.runs(self.drive(self.menu.loop_menu, *answers, project=self.project))
+
+    def test_with_no_goal_open_the_first_lever_starts_one(self):
+        self.project['mode'] = 'local'
+        with mock.patch.object(self.menu, 'loop_state', return_value={'last_rig': 'feat/old'}):
+            output = self.drive(self.menu.loop_menu, '1', 'feat/snake-game', project=self.project)
+            self.assertEqual(self.loop_runs('1', ''), [])
+        self.assertIn('no goal branch open', output)
+        self.assertIn('Last landed: feat/old.', output)
+        self.assertTrue(self.runs(output)[0].endswith('bin/ai-work loop owner-repo-1 start feat/snake-game'))
+
+    def test_the_goal_panel_lists_each_worker_and_every_lever(self):
+        with self.open_goal():
+            output = self.drive(self.menu.loop_menu, project=self.project)
+        for label in ('owner/repo · feat/snake-game · 2 ahead of develop',
+                      '#1 feat/rules-1 · ready for review · seat in iztac-research-agent',
+                      'Dispatch ready tasks in the background', 'Dispatch ready tasks as seats in iztac-research-agent',
+                      'Pause dispatch', 'Show everything on feat/snake-game', 'Land feat/snake-game: merge it into develop',
+                      'Status', 'Plan', 'Cycle report', 'Tasks', 'Tidy merged branches and worktrees'):
+            self.assertIn(label, output)
+
+    def test_seats_are_dispatched_only_into_a_running_team(self):
+        with self.open_goal(), mock.patch.object(self.menu, 'rigs', return_value=[]):
+            refused = self.drive(self.menu.loop_menu, '3', project=self.project)
         self.assertIn('Start iztac-research-agent first', refused)
         self.assertEqual(self.runs(refused), [])
-        with mock.patch.object(self.menu, 'rigs', return_value=[{'name': 'iztac-research-agent'}]):
-            output = self.drive(self.menu.loop_menu, '5', '1', project=self.project)
-        runs = self.runs(output)
+        with self.open_goal(), mock.patch.object(self.menu, 'rigs', return_value=[{'name': 'iztac-research-agent'}]):
+            runs = self.loop_runs('3')
         self.assertTrue(runs[0].endswith('bin/ai-work loop owner-repo-1 go LOOP_SEAT_RIG=iztac-research-agent'))
-        self.assertTrue(runs[1].endswith('bin/ai-work loop owner-repo-1 status'))
-        self.assertIn('dev-loop fold owner/repo <issue>', output)
+
+    def test_landing_asks_first_and_runs_the_owner_verb_directly(self):
+        loop = str(self.menu.LOOP)
+        with self.open_goal():
+            self.assertEqual(self.loop_runs('7', 'n'), [])
+            self.assertEqual(self.loop_runs('7', 'y'), [f'{loop} close owner/repo --merge'])
+        with self.open_goal(mode='owner'):
+            self.assertEqual(self.loop_runs('7', 'y'), [f'{loop} close owner/repo --push'])
+            self.assertEqual(self.loop_runs('8', '12'), [f'{loop} finish owner/repo 12'])
+
+    def test_the_goal_and_its_workers_open_together_in_vs_code(self):
+        with self.open_goal():
+            runs = self.loop_runs('6')
+        self.assertEqual(runs, [f'code -n {self.project["root"]}/.claude/worktrees/loop-1-rules'])
+
+    def test_a_finished_spec_branch_is_read_then_merged_from_the_menu(self):
+        self.project['mode'] = 'local'
+        with mock.patch.object(self.menu, 'loop_state', return_value={'base': 'develop'}), \
+                mock.patch.object(self.menu, 'spec_branches', return_value=['docs/tetris']):
+            runs = self.loop_runs('2', '1', 'y')
+        root = self.project['root']
+        self.assertEqual(runs, [f'git -C {root} diff develop...docs/tetris',
+                                f"git -C {root} merge --no-ff -m Merge branch 'docs/tetris' docs/tetris"])
+
+    def test_a_new_project_starts_from_a_goal_and_opens_a_client_to_spec_it(self):
+        self.menu.DEV_ROOT = str(self.root)
+        folder = self.root / 'tetris'
+        project = dict(self.project, root=str(folder), repo='owner/tetris', id='owner-tetris')
+        with mock.patch.object(self.menu, 'catalog', return_value=[project]), \
+                mock.patch.object(self.menu, 'pick_account', return_value='anthropic-gmail'), \
+                mock.patch.object(self.menu, 'project_menu') as opened:
+            output = self.drive(self.menu.new_project, 'Tetris', 'a falling-blocks game', '1')
+        runs = self.runs(output)
+        self.assertTrue(runs[0].endswith(f'bin/new-repo {folder} --register --personal'))
+        self.assertIn(f'--cwd {folder} Use the intake skill to spec out this project from zero. '
+                      'The goal: a falling-blocks game.', runs[1])
+        opened.assert_called_once_with(project)
+        self.assertEqual(self.runs(self.drive(self.menu.new_project, '')), [])
+
+    def test_a_worker_is_merged_up_released_or_resumed_from_its_own_menu(self):
+        loop = str(self.menu.LOOP)
+        with self.open_goal():
+            self.assertEqual(self.loop_runs('1', '5'), [f'{loop} fold owner/repo 1'])
+            released = self.loop_runs('1', '4')
+            self.assertTrue(released[0].endswith('bin/dev-workspace remove-worker --rig iztac-research-agent '
+                                                 f'--cwd {self.project["root"]}/.claude/worktrees/loop-1-rules'))
+            self.assertIn('diff feat/snake-game...feat/rules-1', self.loop_runs('1', '1')[0])
+        with self.open_goal(seat=None, state='working'):
+            self.assertEqual(self.loop_runs('1', '4'), [f'{loop} resume owner/repo 1'])
+
+    def test_tasks_are_listed_checked_and_written_from_the_menu(self):
+        loop = str(self.menu.LOOP)
+        with mock.patch.object(self.menu, 'loop_state', return_value={}):
+            self.project['mode'] = 'local'
+            runs = self.loop_runs('5', '3', 'Score', 'src/score/', '#1', 'y')
+        self.assertEqual(runs[0], f'{loop} tasks owner/repo new Score --scope src/score/ --depends #1 --ready'
+                                  f'  in {self.project["root"]}')
 
     def test_iztac_is_on_the_home_screen_and_asks_for_a_project_first(self):
         other = dict(self.project, id='elsewhere', source='discovered', root='/x/other')
