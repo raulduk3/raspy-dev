@@ -47,8 +47,8 @@ def catalog(config, dev_root=None):
             if not line.strip() or line.lstrip().startswith('#'):
                 continue
             fields = line.split()
-            if len(fields) not in (3, 4) or not REPO_RE.fullmatch(fields[0]) or fields[2] not in ('owner', 'bot'):
-                raise ValueError(f'{config}:{number}: expected owner/repo checkout owner|bot [base]')
+            if len(fields) not in (3, 4) or not REPO_RE.fullmatch(fields[0]) or fields[2] not in ('local', 'owner', 'bot'):
+                raise ValueError(f'{config}:{number}: expected owner/repo checkout local|owner|bot [base]')
             repo, path = fields[:2]
             root = Path(path).expanduser().resolve()
             common = identity(root)
@@ -56,7 +56,7 @@ def catalog(config, dev_root=None):
                 raise ValueError(f'ambiguous configured repository: {repo}')
             item = dict(id=project_id(repo), repo=repo, root=str(root), group=repo.split('/')[0],
                         common_dir=common, available=bool(common), loop_enabled=True,
-                        source='repos.conf')
+                        source='repos.conf', mode=fields[2])
             projects.append(item)
             if common:
                 identities[common] = item

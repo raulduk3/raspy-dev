@@ -9,9 +9,12 @@
 #
 # Usage: loop-collect.sh --repo owner/name --dir <checkout> --day <loop/date|""> --state <ledger day dir>
 #                        --hooks <platform hooks dir> [--planned N] [--dispatched N] [--out cycle.md]
+#                        [--base <ref>] [--local]
+#   --base: the ref the day is measured against (default origin/develop). --local: a local
+#   repository; GitHub is never called.
 set -u
 REPO=""; DIR=""; DAY=""; STATE=""; HOOKS=""
-PLANNED=0; DISPATCHED=0; OUT=""
+PLANNED=0; DISPATCHED=0; OUT=""; BASE="origin/develop"; LOCAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
@@ -22,6 +25,8 @@ while [ $# -gt 0 ]; do
     --planned) PLANNED="$2"; shift 2 ;;
     --dispatched) DISPATCHED="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
+    --base) BASE="$2"; shift 2 ;;
+    --local) LOCAL=1; shift ;;
     *) echo "unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -39,8 +44,8 @@ running_pid() {  # <issue> -> pid when a worker for it is alive
 
 day_line="none open"
 if [ -n "$DAY" ]; then
-  ahead="$(git -C "$DIR" rev-list --count origin/develop.."$DAY" 2>/dev/null || echo '?')"
-  day_line="$DAY, $ahead commit(s) ahead of origin/develop"
+  ahead="$(git -C "$DIR" rev-list --count "$BASE".."$DAY" 2>/dev/null || echo '?')"
+  day_line="$DAY, $ahead commit(s) ahead of $BASE"
 fi
 
 ready_lines=""; waiting_lines=""; blocked_lines=""
@@ -49,7 +54,7 @@ for wt in "$DIR"/.claude/worktrees/loop-*; do
   [ -d "$wt" ] || continue
   i="$(basename "$wt" | sed -nE 's/^loop-([0-9]+)-.*/\1/p')"; [ -n "$i" ] || continue
   b="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-  ahead="$(git -C "$DIR" rev-list --count "${DAY:-origin/develop}".."$b" 2>/dev/null || echo 0)"
+  ahead="$(git -C "$DIR" rev-list --count "${DAY:-$BASE}".."$b" 2>/dev/null || echo 0)"
   if [ -f "$wt/.worker-blocked.md" ]; then
     nblocked=$((nblocked+1)); blocked_lines="$blocked_lines
   issue #$i $b blocked: $(head -1 "$wt/.worker-blocked.md")"
@@ -75,7 +80,9 @@ if [ -s "$STATE/folded.tsv" ]; then
 fi
 
 pr_line="not opened"
-if [ -f "$STATE/pr-url" ]; then
+if [ -f "$STATE/merged" ]; then
+  pr_line="merged locally into $(cat "$STATE/merged")"
+elif [ -f "$STATE/pr-url" ]; then
   url="$(cat "$STATE/pr-url")"
   st="$(gh pr view "$url" --json number,state,isDraft,statusCheckRollup 2>/dev/null | jq -r '
     def checks:
@@ -88,9 +95,10 @@ if [ -f "$STATE/pr-url" ]; then
   pr_line="$url $st"
 fi
 
-merged_today="$(gh pr list --repo "$REPO" --state merged --limit 40 --json number,headRefName,mergedAt 2>/dev/null \
+merged_today=""; decisions=""
+[ "$LOCAL" = 1 ] || merged_today="$(gh pr list --repo "$REPO" --state merged --limit 40 --json number,headRefName,mergedAt 2>/dev/null \
   | jq -r --arg d "$today" '.[] | select((.mergedAt // "") | startswith($d)) | "  #\(.number) \(.headRefName)"')"
-decisions="$(gh issue list --repo "$REPO" --label decision --state open --limit 40 --json number,title,createdAt 2>/dev/null \
+[ "$LOCAL" = 1 ] || decisions="$(gh issue list --repo "$REPO" --label decision --state open --limit 40 --json number,title,createdAt 2>/dev/null \
   | jq -r --arg d "$today" '.[] | select(.createdAt | startswith($d)) | "  #\(.number) \(.title)"')"
 ndec="$(grep -c '#' <<<"$decisions" || true)"
 

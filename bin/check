@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Offline regression suite. Tests isolate HOME, Git config, remotes and all platform state.
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 cd "$root"
 for command in bash git python3 jq; do
   command -v "$command" >/dev/null || { echo "check: missing $command" >&2; exit 2; }

@@ -13,17 +13,21 @@
 #   --exclude-file: lines of `<issue> <reason>` from the local ledger (folded issues waiting for
 #   the day pull request, issues with a local worker branch). A reason starting with `folded`
 #   also satisfies a dependency, because that code is already on the day branch.
+#   --tasks <checkout> <ref>: a local repository. Tasks come from docs/tasks/ on that ref
+#   (loop-tasks.py) instead of GitHub issues, and GitHub is never called.
 set -u
 REPO=""
 LOCAL_CAP=3
 OUT=""
 EXCLUDE_FILE=""
+TASKS_DIR=""; TASKS_REF=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
     --local-cap) LOCAL_CAP="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --exclude-file) EXCLUDE_FILE="$2"; shift 2 ;;
+    --tasks) TASKS_DIR="$2"; TASKS_REF="$3"; shift 3 ;;
     *) echo "unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -31,11 +35,18 @@ done
 today="$(TZ=America/Chicago date +%Y-%m-%d)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 
-gh issue list --repo "$REPO" --state open --limit 200 --json number,title,labels,body,milestone \
-  > "$tmp/issues.json" || { echo "gh issue list failed" >&2; exit 1; }
-gh issue list --repo "$REPO" --state closed --limit 300 --json number > "$tmp/closed.json" || exit 1
-gh pr list --repo "$REPO" --state open --limit 60 --json number,title,isDraft,headRefName,statusCheckRollup,body \
-  > "$tmp/prs.json" || exit 1
+if [ -n "$TASKS_DIR" ]; then
+  tasks="$(dirname "$0")/loop-tasks.py"
+  python3 "$tasks" "$TASKS_DIR" "$TASKS_REF" issues > "$tmp/issues.json" || exit 1
+  python3 "$tasks" "$TASKS_DIR" "$TASKS_REF" closed > "$tmp/closed.json" || exit 1
+  echo '[]' > "$tmp/prs.json"
+else
+  gh issue list --repo "$REPO" --state open --limit 200 --json number,title,labels,body,milestone \
+    > "$tmp/issues.json" || { echo "gh issue list failed" >&2; exit 1; }
+  gh issue list --repo "$REPO" --state closed --limit 300 --json number > "$tmp/closed.json" || exit 1
+  gh pr list --repo "$REPO" --state open --limit 60 --json number,title,isDraft,headRefName,statusCheckRollup,body \
+    > "$tmp/prs.json" || exit 1
+fi
 
 # Parse Scope / Depends on lines. An issue with neither line is not implementable by the loop.
 jq -c '
