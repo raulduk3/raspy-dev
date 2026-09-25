@@ -12,7 +12,7 @@ local-aware rather than adding a parallel skill.
 
 | Skill | Verdict | One-line reason |
 | --- | --- | --- |
-| `session-entry` | keep | The router for every context; already injected where discovery is off. |
+| `/develop` | keep | The router for every context; already injected where discovery is off. |
 | `development-workspace` | keep, small rewrite | The engineering entry; now also covers reviewing and merging a branch outside the loop. |
 | `new-repo` | rewrite | Description was cut off mid-word and broke strict YAML; body was a placeholder contract. |
 | `intake` | rewrite | GitHub-only (`ghx` decision issues); failed on local repositories; description cut off. |
@@ -47,7 +47,7 @@ local-aware rather than adding a parallel skill.
 
 ## Each skill
 
-### session-entry
+### session-entry (now `/develop`)
 
 - **For:** choosing the working context (personal, system, independent project, Iztac, assigned
   worker) at the start of a session or on a change of scope.
@@ -67,8 +67,8 @@ local-aware rather than adding a parallel skill.
   guidance and `docs/session-context-contract.md`, so renaming it is costly.
 - **Triggers:** "open/resume project X", "continue that branch", "join the loop".
 - **GitHub/local:** neutral, but did not say that a local repository's ledger is `docs/tasks/`.
-- **Overlap:** with `session-entry` (routing) and `iztac-engineering` (Continue route). Merging
-  into `session-entry` would load project procedure into personal sessions; keep separate.
+- **Overlap:** with `/develop` (routing) and `iztac-engineering` (Continue route). Merging
+  into `/develop` would load project procedure into personal sessions; keep separate.
 - **Gap it now covers:** reviewing and merging a worker or offshoot branch that is not a loop
   worker (for example a Codex worktree branch). There was no procedure for that.
 - **Verdict: keep, small rewrite** (task ledger, branch review section).
@@ -161,10 +161,10 @@ local-aware rather than adding a parallel skill.
 
 | Use case | Skills that carry it |
 | --- | --- |
-| Personal and everyday (Morty) | `session-entry` routes; client-native skills do the work. No platform skill needed. |
-| System operations (Neo) | `session-entry` routes; `ai-env doctor` and runbooks. No skill gap found. |
-| Independent engineering in Claude Code or Codex | `session-entry`, then `development-workspace`, then the task skill. |
-| Iztac project conversation | `session-entry` (injected), `iztac-engineering`. |
+| Personal and everyday (Morty) | `/develop` routes; client-native skills do the work. No platform skill needed. |
+| System operations (Neo) | `/develop` routes; `ai-env doctor` and runbooks. No skill gap found. |
+| Independent engineering in Claude Code or Codex | `/develop`, then `development-workspace`, then the task skill. |
+| Iztac project conversation | `/develop` (injected), `iztac-engineering`. |
 | Start a project from zero | `new-repo`, then `intake` (goal to decision to spec to tasks), then `loop`. |
 | Notes, calls, email into work | `distill` (optional), then `intake`. |
 | Run the loop and an OpenRig team | `loop` (`LOOP_SEAT_RIG` seats), `openrig-skills` for fleet mechanics. |
@@ -178,7 +178,7 @@ action, so a client matches on what the user said rather than on the skill's nam
 
 | Skill | Description (trigger) |
 | --- | --- |
-| `session-entry` | Orient every new or resumed native agent session to its actual purpose, scope and existing assignment before working. Reuse on a change of task; do not automatically enroll ordinary conversations in an engineering sprint. |
+| `/develop` | Orient every new or resumed native agent session to its actual purpose, scope and existing assignment before working. Reuse on a change of task; do not automatically enroll ordinary conversations in an engineering sprint. |
 | `development-workspace` | Locate and enter a project, resume or join existing development work, or review and merge a branch outside the loop, from a native coding session. Resolve workspace and ownership before shared edits; do not automatically start a sprint or adopt an agent identity. |
 | `new-repo` | Start a new project from zero: create a repository to the platform standard with `new-repo`, local by default or GitHub-backed on request, register it for the loop, then hand the goal to `intake`. |
 | `intake` | Turn a goal, meeting notes, a transcript, an email or a `distill` candidate into decision records, specification changes and implementable tasks. Works in local repositories (decision and task files) and GitHub-backed ones (decision and task issues). Use when asked to spec something out, plan work, or turn a request into tasks. |
@@ -194,9 +194,9 @@ action, so a client matches on what the user said rather than on the skill's nam
 | Runtime | Today | Proposed |
 | --- | --- | --- |
 | Default homes (`~/.claude`, `~/.codex` through `~/.agents/skills`) | All platform skills, linked to `current/skills/<name>`. On 2026-09-24 every link points at `current`; the "links are not uniform" note in `how-it-connects.md` is out of date for these three folders. | No change. Deprecated skills stay linked until removal. |
-| Isolated homes (`anthropic-apple`, `openai-gmail`) | No platform skills. `session-entry` arrives only because the home's instructions point at the default copy. | Link the same set into each isolated home's `skills/`. Isolation exists for credentials, not procedures. Needs a small `ai-env` or account-preparation step and Ricky's decision (it writes into those homes). |
+| Isolated homes (`anthropic-apple`, `openai-gmail`) | No platform skills. `/develop` arrives only because the home's instructions point at the default copy. | Link the same set into each isolated home's `skills/`. Isolation exists for credentials, not procedures. Needs a small `ai-env` or account-preparation step and Ricky's decision (it writes into those homes). |
 | OpenRig seats | The seat's account home. Platform agents install no skills (`skills: []`). Worker seats need none: the loop's brief is self-contained. | Control seats get the default set through their home; seats on isolated accounts follow the row above. |
-| Pi roles (Morty, Neo, Iztac) | Discovery off. `session-entry` injected; Iztac also gets `iztac-engineering`. | Give Iztac `intake`, `loop`, `new-repo` and `distill` through `additionalSkillPaths` so the routes it names are loadable. Morty and Neo need none. Changes `check-role-skills.mjs`' expected list; needs Ricky's decision on Iztac's context budget. |
+| Pi roles (Morty, Neo, Iztac) | Discovery off. `/develop` injected; Iztac also gets `iztac-engineering`. | Give Iztac `intake`, `loop`, `new-repo` and `distill` through `additionalSkillPaths` so the routes it names are loadable. Morty and Neo need none. Changes `check-role-skills.mjs`' expected list; needs Ricky's decision on Iztac's context budget. |
 
 ## What changed on this branch
 
@@ -234,8 +234,8 @@ design to the platform's where they differ. On branch `feat/pstack-skills`:
   `skills/` (all but `make-bot-ui` and the `automations/benny` skills, which need Cursor
   Automations). `docs/pstack-platform.md` maps her Cursor names to this machine and lists the steps
   the guard hook leaves to the owner.
-- The target set above changes shape. Her `poteto-mode` is the engineering front door, with her
-  playbooks and principles; `session-entry` routes engineering to it and keeps the personal and
+- The target set above changes shape. Her `/dev-plat` is the engineering front door, with her
+  playbooks and principles; `/develop` routes engineering to it and keeps the personal and
   system contexts she has no concept of. The platform's own skills stay for what pstack lacks:
   `new-repo`, `distill`, `intake` and `loop` (the local-first task ledger and workers),
   `development-workspace`, `bounded-decisions`.

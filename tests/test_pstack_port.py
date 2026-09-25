@@ -17,7 +17,8 @@ class PstackPort(unittest.TestCase):
         self.assertRegex((ROOT / 'vendor/pstack/UPSTREAM').read_text(), r'commit: [0-9a-f]{40}')
 
     def test_every_ported_skill_points_at_the_platform_map(self):
-        self.assertIn('poteto-mode', PORTED)
+        self.assertIn('dev-plat', PORTED)
+        self.assertNotIn('poteto-mode', PORTED)
         self.assertNotIn('make-bot-ui', PORTED)
         self.assertTrue((ROOT / 'docs/pstack-platform.md').is_file())
         for name in PORTED:

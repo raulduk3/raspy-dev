@@ -36,7 +36,7 @@ Every real slug written must be in the detected set. `inherit-parent` and `auto`
 
 ### 5. Write the file
 
-Write `~/.config/dev-platform/pstack-models.md` with a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels poteto-mode uses. Overwrite the whole file so re-runs stay idempotent. Shape:
+Write `~/.config/dev-platform/pstack-models.md` with a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels dev-plat uses. Overwrite the whole file so re-runs stay idempotent. Shape:
 
 ```
 # pstack model configuration. One line per role. Delete a line to fall back to the skill default.

@@ -1,7 +1,7 @@
 # pstack on this platform
 
 pstack is Lauren Tan's (poteto's) set of engineering skills for Cursor, MIT licensed. This
-platform uses it as its engineering method: `/poteto-mode` is the front door for any engineering
+platform uses it as its engineering method: `/dev-plat` is the front door for any engineering
 task that needs rigor, and its playbooks, principles and routed skills are the shared contract
 between every tool, agent and seat that writes code here. Her text is kept as she wrote it. This
 page says what her Cursor-specific names mean on this machine. Where her text and this page
@@ -16,8 +16,10 @@ disagree about a tool name, this page wins. Where they disagree about method, he
 | `integrations/pstack/overlays/<name>/` | Whole-file adaptations that replace the vendored file. Today only `setup-pstack`. |
 | `~/.config/dev-platform/pstack-models.md` | The per-role model file `/setup-pstack` writes (her `pstack-models.mdc`). |
 
-A port changes two things in every skill: the frontmatter `name` becomes the folder name, and one
-line after the frontmatter points here. `bin/pstack-port --check` (run by `bin/check`) fails when
+A port changes little. Her front door, `poteto-mode`, is named `/dev-plat` here, in its folder,
+frontmatter, description and every mention in her Markdown (her TypeScript keeps its internal
+names). In every skill the frontmatter `name` becomes the folder name, and one line after the
+frontmatter points here. `bin/pstack-port --check` (run by `bin/check`) fails when
 `skills/` drifts from a fresh port.
 
 To take a newer pstack: replace `vendor/pstack/` with the new upstream path, update `UPSTREAM`,
@@ -29,7 +31,7 @@ skills (Cursor Automations triage and reproduce bots). They stay in `vendor/` fo
 ## Reaching a skill her text names
 
 Her skills set `disable-model-invocation: true`: a person starts one with `/<name>`, and
-`poteto-mode` reaches the rest by reading them. "The **how** skill" means read
+`/dev-plat` reaches the rest by reading them. "The **how** skill" means read
 `skills/how/SKILL.md` in full, next to the skill you are in (installed:
 `~/.agents/skills/how/SKILL.md`, or `~/.local/share/dev-platform/current/skills/how/SKILL.md`).
 Pi roles have skill discovery off; they read the same files by path.
@@ -39,7 +41,7 @@ Pi roles have skill discovery off; they read the same files by path.
 | Her text says | On this platform |
 | --- | --- |
 | A `Task` subagent, `Task` tool | Claude Code's `Agent` tool (`run_in_background: true`, `subagent_type: general-purpose`). Codex: its own subagents, or `codex exec` started in the background. |
-| `subagent_type: "poteto-agent"` | `general-purpose`, with the brief's first line: read `skills/poteto-mode/SKILL.md` in full, including its Principles index. |
+| `subagent_type: "dev-plat-agent"` | `general-purpose`, with the brief's first line: read `skills/dev-plat/SKILL.md` in full, including its Principles index. |
 | A model slug in `model:` | The first word of the role's line in `pstack-models.md`. Claude `Agent` takes `fable`, `opus`, `sonnet`, `haiku`; the effort token applies only where a process is started (`claude --effort`). A `codex:<model>` entry runs as `codex exec --model <model>`. |
 | `environment: "cloud"`, cloud VM, `cloud_base_branch` | There is no cloud. A worker runs on this machine in its own git worktree: `Agent` with `isolation: "worktree"`, a loop worker, or an OpenRig worker seat (`dev-workspace add-worker`). A base branch means the worktree is cut from that local branch. |
 | `~/.cursor/rules/pstack-models.mdc` | `~/.config/dev-platform/pstack-models.md`, written by `/setup-pstack`. Missing file or line: her skill default, read through this table. |
@@ -57,7 +59,7 @@ Pi roles have skill discovery off; they read the same files by path.
 | The Cursor dashboard (cloud agent status) | `rig ps` and `rig_rig_nodes` for seats; `dev-loop status` for loop workers. |
 | `origin pr` (Origin forge) | Not installed. `gh` is the forge. |
 | `gt` (Graphite) | Not installed. Her Opening a PR playbook already says never require it. `orch frontier set` needs it; until a gh-based frontier exists, compute the frontier from `gh pr list` and `git`. |
-| `bun scripts/...` (orch, watch-pr) | Run with `~/.bun/bin/bun` from `skills/poteto-mode/scripts` after `bun install`. |
+| `bun scripts/...` (orch, watch-pr) | Run with `~/.bun/bin/bun` from `skills/dev-plat/scripts` after `bun install`. |
 
 ## Repositories without a forge
 
@@ -88,7 +90,7 @@ model, and the platform's publication rules decide whether an agent pushes at al
 
 In her Orchestrate playbook one coordinator owns the program and writes briefs; workers own units;
 a verifier on a different model family checks each unit. On OpenRig that is: the `control.lead`
-seat runs `/poteto-mode` and follows Orchestrate; each `workers.*` seat runs `/poteto-mode` with
+seat runs `/dev-plat` and follows Orchestrate; each `workers.*` seat runs `/dev-plat` with
 the playbook its brief names (Feature, Bug fix, Refactoring); the `review.overseer` seat runs
 `/interrogate` on a finished unit. Every brief carries her fields: GOAL, SCOPE, CONTEXT,
 ACCEPTANCE, VERIFY, TIMEBOX, FORBIDDEN, REPORT, STANDING. The seat definitions under

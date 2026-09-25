@@ -35,7 +35,7 @@ export async function loadRoleResources({ conversation, conversationHome, platfo
   }
   const identity = {path:identityFile,content:fs.readFileSync(identityFile,'utf8')};
   // Startup guidance must be in context, not merely available for skill discovery.
-  const entryPath = path.join(platformRoot,'skills/session-entry/SKILL.md');
+  const entryPath = path.join(platformRoot,'skills/develop/SKILL.md');
   const entry = {path:entryPath,content:fs.readFileSync(entryPath,'utf8')};
   // The role's own memory index rides in context so it starts oriented; the daily
   // corpus and the inherited records stay behind the agent_memory tool.

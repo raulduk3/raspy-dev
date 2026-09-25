@@ -5,6 +5,9 @@
   bin/pstack-port --check  exit 1 when skills/ differs from what a port would write
 
 Her text stays as she wrote it. A port makes only these changes:
+  - her front door, `poteto-mode`, is named `dev-plat` here (and its agent `dev-plat-agent`):
+    the folder, the frontmatter, its description, and every mention in the ported Markdown;
+    her TypeScript keeps its internal names so its lockfile and tests stay hers;
   - the frontmatter `name` becomes the folder name (clients key skills by it);
   - one platform line after the frontmatter points at docs/pstack-platform.md, the map from
     Cursor's tools to this platform's;
@@ -25,8 +28,15 @@ LISTING = ROOT / 'integrations/pstack/ported.txt'
 PARKED = {
     'make-bot-ui': 'drives Cursor Automations webhooks, which this platform does not have',
 }
+RENAMED = {'poteto-mode': 'dev-plat'}
+MARKDOWN_SUBS = (('poteto-mode', 'dev-plat'), ('poteto-agent', 'dev-plat-agent'))
+DESCRIPTIONS = {
+    'dev-plat': ('"The platform\'s engineering mode, from pstack by Lauren Tan: concise, detailed responses,'
+                 ' deliberate subagents, unslopped prose, simple code, and verified work, routed through'
+                 ' playbooks. Use for /dev-plat or any engineering task that needs rigor."'),
+}
 IGNORE = shutil.ignore_patterns('node_modules', '.DS_Store', '*.log')
-NOTE = ('> **On this platform.** This is pstack\'s `{name}` skill (MIT, Lauren Tan; the unmodified'
+NOTE = ('> **On this platform.** This is {origin} (MIT, Lauren Tan; the unmodified'
         ' source is in `vendor/pstack`).{adapted} Read [the platform map](../../docs/pstack-platform.md)'
         ' (installed: `~/.local/share/dev-platform/current/docs/pstack-platform.md`) once per session:'
         ' it says what the Cursor tools named here are on this machine, and which steps the guard hook'
@@ -34,14 +44,24 @@ NOTE = ('> **On this platform.** This is pstack\'s `{name}` skill (MIT, Lauren T
 ADAPTED = ' This copy is adapted; `integrations/pstack/overlays/{name}/` holds every change.'
 
 
-def adapt(skill_md, name):
-    note = NOTE.format(name=name, adapted=ADAPTED.format(name=name) if (OVERLAYS / name).is_dir() else '')
+def adapt(skill_md, name, upstream):
+    origin = (f'pstack\'s `{name}` skill' if name == upstream
+              else f'pstack\'s front-door mode skill, named `{name}` on this platform')
+    note = NOTE.format(origin=origin, adapted=ADAPTED.format(name=upstream) if (OVERLAYS / upstream).is_dir() else '')
+    for path in skill_md.parent.rglob('*.md'):
+        body = path.read_text()
+        for old, new in MARKDOWN_SUBS:
+            body = body.replace(old, new)
+        path.write_text(body)
     text = skill_md.read_text()
     lines = text.split('\n')
     if lines[0] != '---' or '---' not in lines[1:]:
         sys.exit(f'pstack-port: {skill_md} has no frontmatter')
     end = lines.index('---', 1)
     lines[1:end] = [f'name: {name}' if re.match(r'name:', line) else line for line in lines[1:end]]
+    if name in DESCRIPTIONS:
+        lines[1:end] = [f'description: {DESCRIPTIONS[name]}' if re.match(r'description:', line) else line
+                        for line in lines[1:end]]
     if note not in text:
         lines[end + 1:end + 1] = ['', note]
     skill_md.write_text('\n'.join(lines))
@@ -52,13 +72,14 @@ def build(target):
     for source in sorted(p for p in VENDOR.iterdir() if (p / 'SKILL.md').is_file()):
         if source.name in PARKED:
             continue
-        dest = target / source.name
+        name = RENAMED.get(source.name, source.name)
+        dest = target / name
         shutil.copytree(source, dest, ignore=IGNORE)
         overlay = OVERLAYS / source.name
         if overlay.is_dir():
             shutil.copytree(overlay, dest, dirs_exist_ok=True, ignore=IGNORE)
-        adapt(dest / 'SKILL.md', source.name)
-        names.append(source.name)
+        adapt(dest / 'SKILL.md', name, source.name)
+        names.append(name)
     return names
 
 

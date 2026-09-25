@@ -22,7 +22,7 @@ try {
       const result=await loadRoleResources({conversation:{agent,scope:{kind},binding:selected?{workspace:project}:{}},conversationHome,platformRoot,agentDir:path.join(root,'auth'),identityFile});
       assert.equal(result.cwd,selected?fs.realpathSync(project):path.join(conversationHome,'workspace'));
       const contents=result.loader.getAgentsFiles().agentsFiles.map(f=>f.content).join('\n');
-      const entryPath=path.join(platformRoot,'skills/session-entry/SKILL.md');
+      const entryPath=path.join(platformRoot,'skills/develop/SKILL.md');
       const entries=result.loader.getAgentsFiles().agentsFiles.filter(f=>f.path===entryPath);
       assert.equal(entries.length,1);
       assert.equal(entries[0].content,fs.readFileSync(entryPath,'utf8'));

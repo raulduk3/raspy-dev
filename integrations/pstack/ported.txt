@@ -9,7 +9,7 @@ how
 interrogate
 maintain-verification-skill
 no-comments
-poteto-mode
+dev-plat
 principle-attack-the-premise
 principle-boundary-discipline
 principle-build-the-lever

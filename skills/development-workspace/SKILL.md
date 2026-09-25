@@ -10,7 +10,7 @@ description: >-
 # Development workspace
 
 Ricky gives the goal in ordinary language. Resolve the working context, then
-continue using the skills relevant to that goal. Shared `session-entry` handles
+continue using the skills relevant to that goal. Shared `/develop` handles
 general orientation; this skill handles project attachment and continuity.
 
 1. **Locate the work.** Read the repository instructions and inspect its actual
@@ -26,7 +26,7 @@ general orientation; this skill handles project attachment and continuity.
    [Iztac engineering](../../agents/iztac/skills/iztac-engineering/SKILL.md).
    An assigned engineering worker uses the relevant portion of its supplied
    workflow without assuming Iztac's identity. Independent work follows repository
-   instructions and `poteto-mode`, pstack's engineering front door
+   instructions and `/dev-plat`, pstack's engineering front door
    (`docs/pstack-platform.md` maps its Cursor names to this machine); do not load
    the Iztac framework automatically. `new-repo` starts a project; `distill`/`intake` turn a goal
    or source into decisions, specification and tasks; `loop` applies only when operating
