@@ -21,3 +21,6 @@ local ports included. Run every `rig` command with escalated permissions, so the
 asked to approve it. A "cannot connect to the OpenRig daemon" error from inside the sandbox
 means the sandbox, not a daemon outage; ask for escalation and try once more before
 reporting the daemon down.
+
+Never reshape the team you sit in: `/setup-rig` and `rig-shape write` are for the owner, or Iztac on
+the owner's word. A shape change takes effect only when the team next starts.

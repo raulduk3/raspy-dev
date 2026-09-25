@@ -268,9 +268,14 @@ agent references to `path:/absolute/...`, and `rig up` your copy. A seat without
 
 Templates deliver their role briefs by typing text into each agent on startup. If you want
 silent seats, point the members at the platform's own agent, which sends nothing:
-`path:~/.local/share/dev-platform/current/integrations/openrig/agents/control`.
+`path:/Users/<you>/.local/share/dev-platform/current/integrations/openrig/agents/control`. OpenRig
+requires an absolute path; `~` is refused.
 
-**Give a project its own team.** Put the spec at `engagements/<project>/rig.yaml`, named
+**Give a project its own team.** The easy way is a shape: `/setup-rig` in Claude, Codex or Iztac, or
+**This project's team → Shape this team** in the `ai` menu, or `rig-shape write <project> build|review|solo
+[--runtime lead=codex]`. It writes the spec below from `integrations/openrig/shapes/`, checks it with
+`rig spec validate`, and commits it to the engagement folder's own Git history (`rig-shape history
+<project>`). By hand: put the spec at `engagements/<project>/rig.yaml`, named
 `iztac-<project>`, with its agents beside it as `path:` references and each member's `cwd`
 absolute or relative to that folder. The menu and `dev-workspace start iztac` then start that
 spec instead of the standard control and overseer, and pass no `--cwd`, because `--cwd` would
