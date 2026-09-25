@@ -100,6 +100,7 @@ Scratch files and helper scripts belong in a project worktree or project artifac
 - `bin/ai-account`: verifies native account/profile selection and quota snapshots for new CLI launches.
 - `bin/ai-work`: lists projects/sessions and forwards loop commands to the existing ledger.
 - `bin/dev-workspace`: starts or plans native OpenRig control seats safely.
+- `bin/rig-shape` and `skills/setup-rig`: shape a project's team from a named shape (`build`, `review`, `solo`), validated by OpenRig and recorded in the engagement folder's own history.
 - `bin/ai-env`: read-only diagnostics for local tools, skills and optional services.
 - `hooks/`: command guards, stop checks, one-shot check caching, post-edit formatting.
 - `skills/loop`: work toward a goal on one branch: dispatch workers on child branches, merge each finished child up, land the goal once.

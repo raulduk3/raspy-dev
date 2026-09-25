@@ -24,7 +24,7 @@ try {
     await loader.reload();
     const loaded = loader.getSkills();
     assert.deepEqual(loaded.diagnostics, []);
-    assert.deepEqual(loaded.skills.map(s=>s.name).sort(),agent==='iztac'?['distill','intake','iztac-engineering','new-repo']:[]);
+    assert.deepEqual(loaded.skills.map(s=>s.name).sort(),agent==='iztac'?['distill','intake','iztac-engineering','new-repo','setup-rig']:[]);
     assert.deepEqual(loader.getAgentsFiles().agentsFiles,[]);
     results.push({agent,skills:loaded.skills.map(s=>s.name)});
   }

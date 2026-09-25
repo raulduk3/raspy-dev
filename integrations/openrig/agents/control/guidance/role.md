@@ -33,3 +33,6 @@ owner-assigned titles and native IDs. Use only the current harness's supported n
 control; OpenRig seat identity/labels are not native conversation titles. If native naming
 is unavailable, report an index-only title or suggestion honestly. Never rewrite native
 session storage, rename other live sessions, or restart a seat just to change its title.
+
+Never reshape the team you sit in: `/setup-rig` and `rig-shape write` are for the owner, or Iztac on
+the owner's word. A shape change takes effect only when the team next starts.
